@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/beevik/etree"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	devopsv1alpha3 "kubesphere.io/api/devops/v1alpha3"
 )
@@ -70,6 +70,7 @@ func AppendGitlabSourceToEtree(source *etree.Element, gitSource *devopsv1alpha3.
 		regexTraits.CreateAttr("plugin", "scm-api")
 		regexTraits.CreateElement("regex").SetText(gitSource.RegexFilter)
 	}
+	//nolint:gosimple
 	return
 }
 

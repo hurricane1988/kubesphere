@@ -16,19 +16,19 @@ package v1
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"math"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
-	restful "github.com/emicklei/go-restful"
+	"github.com/emicklei/go-restful/v3"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	"kubesphere.io/api/application/v1alpha1"
 
@@ -42,6 +42,7 @@ import (
 	"kubesphere.io/kubesphere/pkg/server/params"
 	openpitrixoptions "kubesphere.io/kubesphere/pkg/simple/client/openpitrix"
 	"kubesphere.io/kubesphere/pkg/simple/client/s3"
+	"kubesphere.io/kubesphere/pkg/utils/clusterclient"
 	"kubesphere.io/kubesphere/pkg/utils/idutils"
 	"kubesphere.io/kubesphere/pkg/utils/stringutils"
 )
@@ -50,7 +51,7 @@ type openpitrixHandler struct {
 	openpitrix openpitrix.Interface
 }
 
-func newOpenpitrixHandler(ksInformers informers.InformerFactory, ksClient versioned.Interface, option *openpitrixoptions.Options) *openpitrixHandler {
+func NewOpenpitrixClient(ksInformers informers.InformerFactory, ksClient versioned.Interface, option *openpitrixoptions.Options, cc clusterclient.ClusterClients) openpitrix.Interface {
 	var s3Client s3.Interface
 	if option != nil && option.S3Options != nil && len(option.S3Options.Endpoint) != 0 {
 		var err error
@@ -60,9 +61,7 @@ func newOpenpitrixHandler(ksInformers informers.InformerFactory, ksClient versio
 		}
 	}
 
-	return &openpitrixHandler{
-		openpitrix.NewOpenpitrixOperator(ksInformers, ksClient, s3Client),
-	}
+	return openpitrix.NewOpenpitrixOperator(ksInformers, ksClient, s3Client, cc)
 }
 
 func (h *openpitrixHandler) CreateRepo(req *restful.Request, resp *restful.Response) {
@@ -707,7 +706,6 @@ func (h *openpitrixHandler) DescribeApplication(req *restful.Request, resp *rest
 	}
 
 	resp.WriteEntity(app)
-	return
 }
 
 func (h *openpitrixHandler) DeleteApplication(req *restful.Request, resp *restful.Response) {
@@ -753,7 +751,7 @@ func (h *openpitrixHandler) ListApplications(req *restful.Request, resp *restful
 		return
 	}
 
-	resp.WriteAsJson(result)
+	resp.WriteEntity(result)
 }
 
 func (h *openpitrixHandler) UpgradeApplication(req *restful.Request, resp *restful.Response) {
@@ -768,13 +766,12 @@ func (h *openpitrixHandler) UpgradeApplication(req *restful.Request, resp *restf
 	}
 
 	upgradeClusterRequest.Namespace = namespace
-	upgradeClusterRequest.ClusterId = applicationId
 	user, _ := request.UserFrom(req.Request.Context())
 	if user != nil {
 		upgradeClusterRequest.Username = user.GetName()
 	}
 
-	err = h.openpitrix.UpgradeApplication(upgradeClusterRequest)
+	err = h.openpitrix.UpgradeApplication(upgradeClusterRequest, applicationId)
 	if err != nil {
 		klog.Errorln(err)
 		api.HandleInternalError(resp, nil, err)
@@ -988,7 +985,7 @@ func (h *openpitrixHandler) CreateAttachment(req *restful.Request, resp *restful
 			api.HandleBadRequest(resp, nil, err)
 			return
 		}
-		data, err := ioutil.ReadAll(f)
+		data, _ := io.ReadAll(f)
 		f.Close()
 
 		att, err = h.openpitrix.CreateAttachment(data)

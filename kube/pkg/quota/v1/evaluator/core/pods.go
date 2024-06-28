@@ -27,13 +27,13 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
-	"k8s.io/apimachinery/pkg/util/clock"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apiserver/pkg/admission"
+	"k8s.io/utils/clock"
 
 	"kubesphere.io/kubesphere/kube/pkg/apis/core/v1/helper"
 	"kubesphere.io/kubesphere/kube/pkg/apis/core/v1/helper/qos"
-	quota "kubesphere.io/kubesphere/kube/pkg/quota/v1"
+	"kubesphere.io/kubesphere/kube/pkg/quota/v1"
 	"kubesphere.io/kubesphere/kube/pkg/quota/v1/generic"
 )
 
@@ -86,7 +86,7 @@ func isExtendedResourceNameForQuota(name corev1.ResourceName) bool {
 // the incoming pod is required to have those values set.  we should not repeat
 // this mistake for other future resources (gpus, ephemeral-storage,etc).
 // do not add more resources to this list!
-var validationSet = sets.NewString(
+var validationSet = sets.New(
 	string(corev1.ResourceCPU),
 	string(corev1.ResourceMemory),
 	string(corev1.ResourceRequestsCPU),
@@ -123,7 +123,7 @@ func (p *podEvaluator) Constraints(required []corev1.ResourceName, item runtime.
 	// validation with resource counting, but we did this before QoS was even defined.
 	// let's not make that mistake again with other resources now that QoS is defined.
 	requiredSet := quota.ToSet(required).Intersection(validationSet)
-	missingSet := sets.NewString()
+	missingSet := sets.New[string]()
 	for i := range pod.Spec.Containers {
 		enforcePodContainerConstraints(&pod.Spec.Containers[i], requiredSet, missingSet)
 	}
@@ -133,7 +133,7 @@ func (p *podEvaluator) Constraints(required []corev1.ResourceName, item runtime.
 	if len(missingSet) == 0 {
 		return nil
 	}
-	return fmt.Errorf("must specify %s", strings.Join(missingSet.List(), ","))
+	return fmt.Errorf("must specify %s", strings.Join(missingSet.UnsortedList(), ","))
 }
 
 // GroupResource that this evaluator tracks
@@ -144,10 +144,7 @@ func (p *podEvaluator) GroupResource() schema.GroupResource {
 // Handles returns true if the evaluator should handle the specified attributes.
 func (p *podEvaluator) Handles(a admission.Attributes) bool {
 	op := a.GetOperation()
-	if op == admission.Create {
-		return true
-	}
-	return false
+	return op == admission.Create
 }
 
 // Matches returns true if the evaluator matches the specified quota with the provided input item
@@ -223,14 +220,14 @@ var _ quota.Evaluator = &podEvaluator{}
 
 // enforcePodContainerConstraints checks for required resources that are not set on this container and
 // adds them to missingSet.
-func enforcePodContainerConstraints(container *corev1.Container, requiredSet, missingSet sets.String) {
+func enforcePodContainerConstraints(container *corev1.Container, requiredSet, missingSet sets.Set[string]) {
 	requests := container.Resources.Requests
 	limits := container.Resources.Limits
 	containerUsage := podComputeUsageHelper(requests, limits)
 	containerSet := quota.ToSet(quota.ResourceNames(containerUsage))
 	if !containerSet.Equal(requiredSet) {
 		difference := requiredSet.Difference(containerSet)
-		missingSet.Insert(difference.List()...)
+		missingSet.Insert(difference.UnsortedList()...)
 	}
 }
 
@@ -276,7 +273,7 @@ func podComputeUsageHelper(requests corev1.ResourceList, limits corev1.ResourceL
 }
 
 func toExternalPodOrError(obj runtime.Object) (*corev1.Pod, error) {
-	pod := &corev1.Pod{}
+	var pod *corev1.Pod
 	switch t := obj.(type) {
 	case *corev1.Pod:
 		pod = t
@@ -309,8 +306,8 @@ func podMatchesScopeFunc(selector corev1.ScopedResourceSelectorRequirement, obje
 
 // PodUsageFunc returns the quota usage for a pod.
 // A pod is charged for quota if the following are not true.
-//  - pod has a terminal phase (failed or succeeded)
-//  - pod has been marked for deletion and grace period has expired
+//   - pod has a terminal phase (failed or succeeded)
+//   - pod has been marked for deletion and grace period has expired
 func PodUsageFunc(obj runtime.Object, clock clock.Clock) (corev1.ResourceList, error) {
 	pod, err := toExternalPodOrError(obj)
 	if err != nil {

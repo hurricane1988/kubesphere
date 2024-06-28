@@ -37,13 +37,13 @@ func TestNamespaceContext(t *testing.T) {
 	}
 
 	ctx = NewContext()
-	result, ok = NamespaceFrom(ctx)
+	_, ok = NamespaceFrom(ctx)
 	if ok {
 		t.Fatalf("Should not be ok because there is no namespace on the context")
 	}
 }
 
-//TestUserContext validates that a userinfo can be get/set on a context object
+// TestUserContext validates that a userinfo can be get/set on a context object
 func TestUserContext(t *testing.T) {
 	ctx := NewContext()
 	_, ok := UserFrom(ctx)

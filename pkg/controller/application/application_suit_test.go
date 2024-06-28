@@ -28,7 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
-	"k8s.io/klog/klogr"
+	"k8s.io/klog/v2"
 	appv1beta1 "sigs.k8s.io/application/api/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -39,7 +39,6 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
-	"sigs.k8s.io/controller-runtime/pkg/envtest/printer"
 )
 
 // These tests use Ginkgo (BDD-style Go testing framework). Refer to
@@ -51,17 +50,15 @@ var testEnv *envtest.Environment
 
 func TestApplicationController(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecsWithDefaultAndCustomReporters(t,
-		"Application Controller Test Suite",
-		[]Reporter{printer.NewlineReporter{}})
+	RunSpecs(t, "Application Controller Test Suite")
 }
 
 var _ = BeforeSuite(func(done Done) {
-	logf.SetLogger(klogr.New())
+	logf.SetLogger(klog.NewKlogr())
 
 	By("bootstrapping test environment")
 	testEnv = &envtest.Environment{
-		CRDDirectoryPaths:        []string{filepath.Join("..", "..", "..", "config", "crds")},
+		CRDDirectoryPaths:        []string{filepath.Join("..", "..", "..", "config", "ks-core", "crds")},
 		AttachControlPlaneOutput: false,
 	}
 
@@ -90,9 +87,10 @@ var _ = AfterSuite(func() {
 
 // SetupTest will setup a testing environment.
 // This includes:
-//  * creating a Namespace to be used during the test
-//  * starting application controller
-//  * stopping application controller after the test ends
+//   - creating a Namespace to be used during the test
+//   - starting application controller
+//   - stopping application controller after the test ends
+//
 // Call this function at the start of each of your tests.
 func SetupTest(ctx context.Context) *corev1.Namespace {
 	var stopCh chan struct{}

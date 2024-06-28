@@ -1,3 +1,16 @@
+// Copyright 2022 The KubeSphere Authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 package rules
 
 import (
@@ -10,10 +23,10 @@ import (
 	"github.com/prometheus-community/prom-label-proxy/injectproxy"
 	promresourcesv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	prommodel "github.com/prometheus/common/model"
-	promlabels "github.com/prometheus/prometheus/pkg/labels"
+	promlabels "github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/rules"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	"kubesphere.io/kubesphere/pkg/api/alerting/v2alpha1"
 	"kubesphere.io/kubesphere/pkg/simple/client/alerting"
@@ -51,7 +64,7 @@ func InjectExprNamespaceLabel(expr, namespace string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err = injectproxy.NewEnforcer(&promlabels.Matcher{
+	if err = injectproxy.NewEnforcer(false, &promlabels.Matcher{
 		Type:  promlabels.MatchEqual,
 		Name:  "namespace",
 		Value: namespace,
@@ -83,10 +96,10 @@ func GenResourceRuleIdIgnoreFormat(group string, rule *promresourcesv1.Rule) str
 		klog.Warning(errors.Wrapf(err, "invalid alerting rule(%s)", rule.Alert))
 		query = rule.Expr.String()
 	}
-	duration, err := FormatDuration(rule.For)
+	duration, err := FormatDuration(string(rule.For))
 	if err != nil {
 		klog.Warning(errors.Wrapf(err, "invalid alerting rule(%s)", rule.Alert))
-		duration = rule.For
+		duration = string(rule.For)
 	}
 
 	lbls := make(map[string]string)
@@ -160,8 +173,13 @@ func GetAlertingRulesStatus(ruleNamespace string, ruleChunk *ResourceRuleChunk, 
 		if !strings.HasPrefix(fileShort, ruleNamespace+"-") {
 			continue
 		}
-		resourceRules, ok := ruleChunk.ResourceRulesMap[strings.TrimPrefix(fileShort, ruleNamespace+"-")]
-		if !ok {
+		var resourceRules *ResourceRuleCollection
+		for resourceName, rules := range ruleChunk.ResourceRulesMap {
+			if strings.Contains(strings.TrimPrefix(fileShort, ruleNamespace+"-"), resourceName) {
+				resourceRules = rules
+			}
+		}
+		if resourceRules == nil {
 			continue
 		}
 		if _, ok := resourceRules.GroupSet[group.Name]; !ok {
@@ -231,7 +249,7 @@ out:
 		if !strings.HasPrefix(fileShort, ruleNamespace+"-") {
 			continue
 		}
-		if strings.TrimPrefix(fileShort, ruleNamespace+"-") != rule.ResourceName {
+		if !strings.Contains(strings.TrimPrefix(fileShort, ruleNamespace+"-"), rule.ResourceName) {
 			continue
 		}
 
@@ -269,7 +287,7 @@ func getAlertingRuleStatus(resRule *ResourceRuleItem, epRule *alerting.AlertingR
 			Id:          resRule.Id,
 			Name:        resRule.Rule.Alert,
 			Query:       resRule.Rule.Expr.String(),
-			Duration:    resRule.Rule.For,
+			Duration:    string(resRule.Rule.For),
 			Labels:      resRule.Rule.Labels,
 			Annotations: resRule.Rule.Annotations,
 		},
@@ -284,7 +302,9 @@ func getAlertingRuleStatus(resRule *ResourceRuleItem, epRule *alerting.AlertingR
 		}
 		rule.LastError = epRule.LastError
 		rule.LastEvaluation = epRule.LastEvaluation
-		rule.EvaluationDurationSeconds = epRule.EvaluationTime
+		if epRule.EvaluationTime != nil {
+			rule.EvaluationDurationSeconds = *epRule.EvaluationTime
+		}
 
 		rState := strings.ToLower(epRule.State)
 		cliRuleStateEmpty := rState == ""
@@ -335,11 +355,13 @@ func ParseAlertingRules(epRuleGroups []*alerting.RuleGroup, custom bool, level v
 						Labels:      r.Labels,
 						Annotations: r.Annotations,
 					},
-					State:                     r.State,
-					Health:                    string(r.Health),
-					LastError:                 r.LastError,
-					LastEvaluation:            r.LastEvaluation,
-					EvaluationDurationSeconds: r.EvaluationTime,
+					State:          r.State,
+					Health:         string(r.Health),
+					LastError:      r.LastError,
+					LastEvaluation: r.LastEvaluation,
+				}
+				if r.EvaluationTime != nil {
+					rule.EvaluationDurationSeconds = *r.EvaluationTime
 				}
 				if rule.Health != "" {
 					rule.Health = string(rules.HealthUnknown)

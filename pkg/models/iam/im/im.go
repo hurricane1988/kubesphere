@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -18,11 +18,12 @@ package im
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
 
@@ -70,7 +71,13 @@ func (im *imOperator) UpdateUser(new *iamv1alpha2.User) (*iamv1alpha2.User, erro
 	}
 	// keep encrypted password and user status
 	new.Spec.EncryptedPassword = old.Spec.EncryptedPassword
-	new.Status = old.Status
+	status := old.Status
+	// only support enable or disable
+	if new.Status.State == iamv1alpha2.UserDisabled || new.Status.State == iamv1alpha2.UserActive {
+		status.State = new.Status.State
+		status.LastTransitionTime = &metav1.Time{Time: time.Now()}
+	}
+	new.Status = status
 	updated, err := im.ksClient.IamV1alpha2().Users().Update(context.Background(), new, metav1.UpdateOptions{})
 	if err != nil {
 		klog.Error(err)

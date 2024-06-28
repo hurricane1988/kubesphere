@@ -18,41 +18,24 @@ package app
 
 import (
 	"fmt"
+	"time"
 
+	"github.com/kubesphere/pvc-autoresizer/runners"
+	"github.com/prometheus/common/config"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/cache"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/kubefed/pkg/controller/util"
 
-	"kubesphere.io/kubesphere/cmd/controller-manager/app/options"
-	"kubesphere.io/kubesphere/pkg/controller/application"
-	"kubesphere.io/kubesphere/pkg/controller/helm"
-	"kubesphere.io/kubesphere/pkg/controller/namespace"
-	"kubesphere.io/kubesphere/pkg/controller/openpitrix/helmapplication"
-	"kubesphere.io/kubesphere/pkg/controller/openpitrix/helmcategory"
-	"kubesphere.io/kubesphere/pkg/controller/openpitrix/helmrelease"
-	"kubesphere.io/kubesphere/pkg/controller/openpitrix/helmrepo"
-	"kubesphere.io/kubesphere/pkg/controller/quota"
-	"kubesphere.io/kubesphere/pkg/controller/serviceaccount"
-	"kubesphere.io/kubesphere/pkg/controller/user"
-	"kubesphere.io/kubesphere/pkg/controller/workspace"
-	"kubesphere.io/kubesphere/pkg/controller/workspacerole"
-	"kubesphere.io/kubesphere/pkg/controller/workspacerolebinding"
-	"kubesphere.io/kubesphere/pkg/controller/workspacetemplate"
-	"kubesphere.io/kubesphere/pkg/models/kubeconfig"
-	"kubesphere.io/kubesphere/pkg/simple/client/devops"
-	"kubesphere.io/kubesphere/pkg/simple/client/devops/jenkins"
-	ldapclient "kubesphere.io/kubesphere/pkg/simple/client/ldap"
-	"kubesphere.io/kubesphere/pkg/simple/client/s3"
-
-	"kubesphere.io/kubesphere/pkg/controller/storage/snapshotclass"
-
 	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
 
+	"kubesphere.io/kubesphere/cmd/controller-manager/app/options"
+	"kubesphere.io/kubesphere/pkg/controller/alerting"
+	"kubesphere.io/kubesphere/pkg/controller/application"
 	"kubesphere.io/kubesphere/pkg/controller/certificatesigningrequest"
 	"kubesphere.io/kubesphere/pkg/controller/cluster"
 	"kubesphere.io/kubesphere/pkg/controller/clusterrolebinding"
@@ -61,17 +44,35 @@ import (
 	"kubesphere.io/kubesphere/pkg/controller/globalrolebinding"
 	"kubesphere.io/kubesphere/pkg/controller/group"
 	"kubesphere.io/kubesphere/pkg/controller/groupbinding"
+	"kubesphere.io/kubesphere/pkg/controller/helm"
 	"kubesphere.io/kubesphere/pkg/controller/job"
 	"kubesphere.io/kubesphere/pkg/controller/loginrecord"
+	"kubesphere.io/kubesphere/pkg/controller/namespace"
 	"kubesphere.io/kubesphere/pkg/controller/network/ippool"
 	"kubesphere.io/kubesphere/pkg/controller/network/nsnetworkpolicy"
 	"kubesphere.io/kubesphere/pkg/controller/network/nsnetworkpolicy/provider"
 	"kubesphere.io/kubesphere/pkg/controller/notification"
+	"kubesphere.io/kubesphere/pkg/controller/openpitrix/helmapplication"
+	"kubesphere.io/kubesphere/pkg/controller/openpitrix/helmcategory"
+	"kubesphere.io/kubesphere/pkg/controller/openpitrix/helmrelease"
+	"kubesphere.io/kubesphere/pkg/controller/openpitrix/helmrepo"
+	"kubesphere.io/kubesphere/pkg/controller/quota"
+	"kubesphere.io/kubesphere/pkg/controller/serviceaccount"
 	"kubesphere.io/kubesphere/pkg/controller/storage/capability"
+	"kubesphere.io/kubesphere/pkg/controller/user"
 	"kubesphere.io/kubesphere/pkg/controller/virtualservice"
+	"kubesphere.io/kubesphere/pkg/controller/workspace"
+	"kubesphere.io/kubesphere/pkg/controller/workspacerole"
+	"kubesphere.io/kubesphere/pkg/controller/workspacerolebinding"
+	"kubesphere.io/kubesphere/pkg/controller/workspacetemplate"
 	"kubesphere.io/kubesphere/pkg/informers"
+	"kubesphere.io/kubesphere/pkg/models/kubeconfig"
+	"kubesphere.io/kubesphere/pkg/simple/client/devops"
+	"kubesphere.io/kubesphere/pkg/simple/client/devops/jenkins"
 	"kubesphere.io/kubesphere/pkg/simple/client/k8s"
+	ldapclient "kubesphere.io/kubesphere/pkg/simple/client/ldap"
 	ippoolclient "kubesphere.io/kubesphere/pkg/simple/client/network/ippool"
+	"kubesphere.io/kubesphere/pkg/simple/client/s3"
 )
 
 var allControllers = []string{
@@ -81,40 +82,38 @@ var allControllers = []string{
 	"workspacerole",
 	"workspacerolebinding",
 	"namespace",
-
 	"helmrepo",
 	"helmcategory",
 	"helmapplication",
 	"helmapplicationversion",
 	"helmrelease",
 	"helm",
-
 	"application",
 	"serviceaccount",
 	"resourcequota",
-
 	"virtualservice",
 	"destinationrule",
 	"job",
 	"storagecapability",
-	"volumesnapshot",
+	"pvcautoresizer",
+	"workloadrestart",
 	"loginrecord",
 	"cluster",
 	"nsnp",
 	"ippool",
 	"csr",
-
 	"clusterrolebinding",
-
 	"fedglobalrolecache",
 	"globalrole",
 	"fedglobalrolebindingcache",
 	"globalrolebinding",
-
 	"groupbinding",
 	"group",
-
 	"notification",
+	"pvcworkloadrestarter",
+	"rulegroup",
+	"clusterrulegroup",
+	"globalrulegroup",
 }
 
 // setup all available controllers one by one
@@ -209,7 +208,7 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, informerFactory i
 
 	// "namespace" controller
 	if cmOptions.IsControllerEnabled("namespace") {
-		namespaceReconciler := &namespace.Reconciler{}
+		namespaceReconciler := &namespace.Reconciler{GatewayOptions: cmOptions.GatewayOptions}
 		addControllerWithSetup(mgr, "namespace", namespaceReconciler)
 	}
 
@@ -234,13 +233,13 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, informerFactory i
 
 		// "helmapplication" controller
 		if cmOptions.IsControllerEnabled("helmapplication") {
-			reconcileHelmApp := (&helmapplication.ReconcileHelmApplication{})
+			reconcileHelmApp := &helmapplication.ReconcileHelmApplication{}
 			addControllerWithSetup(mgr, "helmapplication", reconcileHelmApp)
 		}
 
 		// "helmapplicationversion" controller
 		if cmOptions.IsControllerEnabled("helmapplicationversion") {
-			reconcileHelmAppVersion := (&helmapplication.ReconcileHelmApplicationVersion{})
+			reconcileHelmAppVersion := &helmapplication.ReconcileHelmApplicationVersion{}
 			addControllerWithSetup(mgr, "helmapplicationversion", reconcileHelmAppVersion)
 		}
 	}
@@ -338,14 +337,37 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, informerFactory i
 		addController(mgr, "storagecapability", storageCapabilityController)
 	}
 
-	// "volumesnapshot" controller
-	if cmOptions.IsControllerEnabled("volumesnapshot") {
-		volumeSnapshotController := snapshotclass.NewController(
-			kubernetesInformer.Storage().V1().StorageClasses(),
-			client.Snapshot().SnapshotV1().VolumeSnapshotClasses(),
-			informerFactory.SnapshotSharedInformerFactory().Snapshot().V1().VolumeSnapshotClasses(),
+	// "pvcautoresizer" controller
+	monitoringOptionsEnable := cmOptions.MonitoringOptions != nil && len(cmOptions.MonitoringOptions.Endpoint) != 0
+	if monitoringOptionsEnable {
+		if cmOptions.IsControllerEnabled("pvcautoresizer") {
+			if err := runners.SetupIndexer(mgr, false); err != nil {
+				return err
+			}
+			promClient, err := runners.NewPrometheusClient(cmOptions.MonitoringOptions.Endpoint, &config.HTTPClientConfig{})
+			if err != nil {
+				return err
+			}
+			pvcAutoResizerController := runners.NewPVCAutoresizer(
+				promClient,
+				mgr.GetClient(),
+				ctrl.Log.WithName("pvcautoresizer"),
+				1*time.Minute,
+				mgr.GetEventRecorderFor("pvcautoresizer"),
+			)
+			addController(mgr, "pvcautoresizer", pvcAutoResizerController)
+		}
+	}
+
+	// "pvcworkloadrestarter" controller
+	if cmOptions.IsControllerEnabled("pvcworkloadrestarter") {
+		restarter := runners.NewRestarter(
+			mgr.GetClient(),
+			ctrl.Log.WithName("pvcworkloadrestarter"),
+			1*time.Minute,
+			mgr.GetEventRecorderFor("pvcworkloadrestarter"),
 		)
-		addController(mgr, "volumesnapshot", volumeSnapshotController)
+		addController(mgr, "pvcworkloadrestarter", restarter)
 	}
 
 	// "loginrecord" controller
@@ -452,11 +474,13 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, informerFactory i
 		if cmOptions.MultiClusterOptions.Enable {
 			clusterController := cluster.NewClusterController(
 				client.Kubernetes(),
+				client.KubeSphere(),
 				client.Config(),
 				kubesphereInformer.Cluster().V1alpha1().Clusters(),
-				client.KubeSphere().ClusterV1alpha1().Clusters(),
+				kubesphereInformer.Iam().V1alpha2().Users().Lister(),
 				cmOptions.MultiClusterOptions.ClusterControllerResyncPeriod,
-				cmOptions.MultiClusterOptions.HostClusterName)
+				cmOptions.MultiClusterOptions.HostClusterName,
+			)
 			addController(mgr, "cluster", clusterController)
 		}
 	}
@@ -502,6 +526,26 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, informerFactory i
 		}
 	}
 
+	// controllers for alerting
+	alertingOptionsEnable := cmOptions.AlertingOptions != nil && (cmOptions.AlertingOptions.PrometheusEndpoint != "" || cmOptions.AlertingOptions.ThanosRulerEndpoint != "")
+	if alertingOptionsEnable {
+		// "rulegroup" controller
+		if cmOptions.IsControllerEnabled("rulegroup") {
+			rulegroupReconciler := &alerting.RuleGroupReconciler{}
+			addControllerWithSetup(mgr, "rulegroup", rulegroupReconciler)
+		}
+		// "clusterrulegroup" controller
+		if cmOptions.IsControllerEnabled("clusterrulegroup") {
+			clusterrulegroupReconciler := &alerting.ClusterRuleGroupReconciler{}
+			addControllerWithSetup(mgr, "clusterrulegroup", clusterrulegroupReconciler)
+		}
+		// "globalrulegroup" controller
+		if cmOptions.IsControllerEnabled("globalrulegroup") {
+			globalrulegroupReconciler := &alerting.GlobalRuleGroupReconciler{}
+			addControllerWithSetup(mgr, "globalrulegroup", globalrulegroupReconciler)
+		}
+	}
+
 	// log all controllers process result
 	for _, name := range allControllers {
 		if cmOptions.IsControllerEnabled(name) {
@@ -518,7 +562,7 @@ func addAllControllers(mgr manager.Manager, client k8s.Client, informerFactory i
 	return nil
 }
 
-var addSuccessfullyControllers = sets.NewString()
+var addSuccessfullyControllers = sets.New[string]()
 
 type setupableController interface {
 	SetupWithManager(mgr ctrl.Manager) error

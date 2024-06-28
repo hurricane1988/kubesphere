@@ -19,6 +19,7 @@ package v1alpha1
 import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 )
 
 const (
@@ -121,6 +122,9 @@ const (
 
 	// Openpitrix runtime is created
 	ClusterOpenPitrixRuntimeReady ClusterConditionType = "OpenPitrixRuntimeReady"
+
+	// ClusterKubeConfigCertExpiresInSevenDays indicates that the cluster certificate is about to expire.
+	ClusterKubeConfigCertExpiresInSevenDays ClusterConditionType = "KubeConfigCertExpiresInSevenDays"
 )
 
 type ClusterCondition struct {
@@ -165,10 +169,13 @@ type ClusterStatus struct {
 	// every amount of time, like 5 minutes.
 	// +optional
 	Configz map[string]bool `json:"configz,omitempty"`
+
+	// UID is the kube-system namespace UID of the cluster, which represents the unique ID of the cluster.
+	UID types.UID `json:"uid,omitempty"`
 }
 
 // +genclient
-// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:object:root=true
 // +k8s:openapi-gen=true
 // +genclient:nonNamespaced
 // +kubebuilder:printcolumn:name="Federated",type="boolean",JSONPath=".spec.joinFederation"
@@ -186,7 +193,7 @@ type Cluster struct {
 	Status ClusterStatus `json:"status,omitempty"`
 }
 
-// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:object:root=true
 
 type ClusterList struct {
 	metav1.TypeMeta `json:",inline"`

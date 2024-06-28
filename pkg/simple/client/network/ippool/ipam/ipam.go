@@ -24,15 +24,15 @@ import (
 	"net"
 
 	cnitypes "github.com/containernetworking/cni/pkg/types"
-	"github.com/containernetworking/cni/pkg/types/current"
+	cnitypes040 "github.com/containernetworking/cni/pkg/types/040"
 	"github.com/davecgh/go-spew/spew"
-	cnet "github.com/projectcalico/libcalico-go/lib/net"
-	"github.com/projectcalico/libcalico-go/lib/set"
+	cnet "github.com/projectcalico/calico/libcalico-go/lib/net"
+	"github.com/projectcalico/calico/libcalico-go/lib/set"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	"kubesphere.io/api/network/v1alpha1"
@@ -87,9 +87,9 @@ type IPAMClient struct {
 // and the list of the assigned IPv6 addresses.
 //
 // In case of error, returns the IPs allocated so far along with the error.
-func (c IPAMClient) AutoAssign(args AutoAssignArgs) (*current.Result, error) {
+func (c IPAMClient) AutoAssign(args AutoAssignArgs) (*cnitypes040.Result, error) {
 	var (
-		result current.Result
+		result cnitypes040.Result
 		err    error
 		ip     *cnet.IPNet
 		pool   *v1alpha1.IPPool
@@ -130,7 +130,7 @@ func (c IPAMClient) AutoAssign(args AutoAssignArgs) (*current.Result, error) {
 		version = 6
 	}
 
-	result.IPs = append(result.IPs, &current.IPConfig{
+	result.IPs = append(result.IPs, &cnitypes040.IPConfig{
 		Version: fmt.Sprintf("%d", version),
 		Address: net.IPNet{IP: ip.IP, Mask: ip.Mask},
 		Gateway: net.ParseIP(pool.Spec.Gateway),
@@ -151,7 +151,7 @@ func (c IPAMClient) AutoAssign(args AutoAssignArgs) (*current.Result, error) {
 	poolType := pool.Spec.Type
 	switch poolType {
 	case v1alpha1.VLAN:
-		result.Interfaces = append(result.Interfaces, &current.Interface{
+		result.Interfaces = append(result.Interfaces, &cnitypes040.Interface{
 			Mac: utils.EthRandomAddr(ip.IP),
 		})
 	}
@@ -159,7 +159,7 @@ func (c IPAMClient) AutoAssign(args AutoAssignArgs) (*current.Result, error) {
 	return &result, nil
 }
 
-//findOrClaimBlock find an address block with free space, and if it doesn't exist, create it.
+// findOrClaimBlock find an address block with free space, and if it doesn't exist, create it.
 func (c IPAMClient) findOrClaimBlock(pool *v1alpha1.IPPool, minFreeIps int) (*v1alpha1.IPAMBlock, error) {
 	remainingBlocks, err := c.ListBlocks(pool.Name)
 	if err != nil {
@@ -488,7 +488,7 @@ func (c IPAMClient) findUnclaimedBlock(pool *v1alpha1.IPPool) (*v1alpha1.IPAMBlo
 	/// Build a map for faster lookups.
 	exists := map[string]bool{}
 	for _, e := range existingBlocks {
-		exists[fmt.Sprintf("%s", e.Spec.CIDR)] = true
+		exists[e.Spec.CIDR] = true
 	}
 
 	// Iterate through pools to find a new block.
@@ -512,7 +512,7 @@ func (c IPAMClient) findUnclaimedBlock(pool *v1alpha1.IPPool) (*v1alpha1.IPAMBlo
 		blocks := blockGenerator(pool)
 		for subnet := blocks(); subnet != nil; subnet = blocks() {
 			// Check if a block already exists for this subnet.
-			if _, ok := exists[fmt.Sprintf("%s", subnet.String())]; !ok {
+			if _, ok := exists[subnet.String()]; !ok {
 				result = v1alpha1.NewBlock(pool, *subnet, nil)
 				break
 			}

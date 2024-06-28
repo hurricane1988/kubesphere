@@ -18,6 +18,7 @@ package cluster
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"time"
 
@@ -33,7 +34,8 @@ import (
 	kubeclient "k8s.io/client-go/kubernetes"
 	k8sscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
-	"k8s.io/klog"
+	"k8s.io/client-go/util/retry"
+	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	fedapis "sigs.k8s.io/kubefed/pkg/apis"
 	fedv1b1 "sigs.k8s.io/kubefed/pkg/apis/core/v1beta1"
@@ -198,25 +200,25 @@ func createKubeFedCluster(clusterConfig *rest.Config, client client.Client, join
 	case err == nil && errorOnExisting:
 		return nil, errors.Errorf("federated cluster %s already exists in host cluster", joiningClusterName)
 	case err == nil:
-		existingFedCluster.Spec = fedCluster.Spec
-		existingFedCluster.Labels = labels
-		err = client.Update(context.TODO(), existingFedCluster)
-		if err != nil {
+		if retryErr := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+			if err = client.Get(context.TODO(), key, existingFedCluster); err != nil {
+				return err
+			}
+			existingFedCluster.Spec = fedCluster.Spec
+			existingFedCluster.Labels = labels
+			return client.Update(context.TODO(), existingFedCluster)
+		}); retryErr != nil {
 			klog.V(2).Infof("Could not update federated cluster %s due to %v", fedCluster.Name, err)
 			return nil, err
 		}
 		return existingFedCluster, nil
 	default:
-
-		err = checkWorkspaces(clusterConfig, client, fedCluster)
-
-		if err != nil {
+		if err = checkWorkspaces(clusterConfig, client, fedCluster); err != nil {
 			klog.V(2).Infof("Validate federated cluster %s failed due to %v", fedCluster.Name, err)
 			return nil, err
 		}
 
-		err = client.Create(context.TODO(), fedCluster)
-		if err != nil {
+		if err = client.Create(context.TODO(), fedCluster); err != nil {
 			klog.V(2).Infof("Could not create federated cluster %s due to %v", fedCluster.Name, err)
 			return nil, err
 		}
@@ -268,7 +270,7 @@ func createAuthorizedServiceAccount(joiningClusterClientset kubeclient.Interface
 
 	klog.V(2).Infof("Creating service account in joining cluster: %s", joiningClusterName)
 
-	saName, err := createServiceAccount(joiningClusterClientset, namespace,
+	saName, err := createServiceAccountWithSecret(joiningClusterClientset, namespace,
 		joiningClusterName, hostClusterName, dryRun, errorOnExisting)
 	if err != nil {
 		klog.V(2).Infof("Error creating service account: %s in joining cluster: %s due to: %v",
@@ -320,31 +322,75 @@ func createAuthorizedServiceAccount(joiningClusterClientset kubeclient.Interface
 	return saName, nil
 }
 
-// createServiceAccount creates a service account in the cluster associated
+// createServiceAccountWithSecret creates a service account and secret in the cluster associated
 // with clusterClientset with credentials that will be used by the host cluster
 // to access its API server.
-func createServiceAccount(clusterClientset kubeclient.Interface, namespace,
+func createServiceAccountWithSecret(clusterClientset kubeclient.Interface, namespace,
 	joiningClusterName, hostClusterName string, dryRun, errorOnExisting bool) (string, error) {
 	saName := util.ClusterServiceAccountName(joiningClusterName, hostClusterName)
-	sa := &corev1.ServiceAccount{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      saName,
-			Namespace: namespace,
-		},
-	}
 
 	if dryRun {
 		return saName, nil
 	}
 
-	// Create a new service account.
-	_, err := clusterClientset.CoreV1().ServiceAccounts(namespace).Create(context.Background(), sa, metav1.CreateOptions{})
-	switch {
-	case apierrors.IsAlreadyExists(err) && errorOnExisting:
-		klog.V(2).Infof("Service account %s/%s already exists in target cluster %s", namespace, saName, joiningClusterName)
+	ctx := context.Background()
+	sa, err := clusterClientset.CoreV1().ServiceAccounts(namespace).Get(ctx, saName, metav1.GetOptions{})
+
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			sa = &corev1.ServiceAccount{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      saName,
+					Namespace: namespace,
+				},
+			}
+			// We must create the sa first, then create the associated secret, and update the sa at last.
+			// Or the kube-controller-manager will delete the secret.
+			sa, err = clusterClientset.CoreV1().ServiceAccounts(namespace).Create(ctx, sa, metav1.CreateOptions{})
+			switch {
+			case apierrors.IsAlreadyExists(err) && errorOnExisting:
+				klog.V(2).Infof("Service account %s/%s already exists in target cluster %s", namespace, saName, joiningClusterName)
+				return "", err
+			case err != nil && !apierrors.IsAlreadyExists(err):
+				klog.V(2).Infof("Could not create service account %s/%s in target cluster %s due to: %v", namespace, saName, joiningClusterName, err)
+				return "", err
+			}
+		} else {
+			return "", err
+		}
+	}
+
+	if len(sa.Secrets) > 0 {
+		return saName, nil
+	}
+
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			GenerateName: fmt.Sprintf("%s-token-", saName),
+			Namespace:    namespace,
+			Annotations: map[string]string{
+				corev1.ServiceAccountNameKey: saName,
+			},
+		},
+		Type: corev1.SecretTypeServiceAccountToken,
+	}
+
+	// After kubernetes v1.24, kube-controller-manger will not create the default secret for
+	// service account. http://kep.k8s.io/2800
+	// Create a default secret.
+	secret, err = clusterClientset.CoreV1().Secrets(namespace).Create(ctx, secret, metav1.CreateOptions{})
+
+	if err != nil && !apierrors.IsAlreadyExists(err) {
+		klog.V(2).Infof("Could not create secret for service account %s/%s in target cluster %s due to: %v", namespace, saName, joiningClusterName, err)
 		return "", err
-	case err != nil && !apierrors.IsAlreadyExists(err):
-		klog.V(2).Infof("Could not create service account %s/%s in target cluster %s due to: %v", namespace, saName, joiningClusterName, err)
+	}
+
+	// At last, update the service account.
+	sa.Secrets = append(sa.Secrets, corev1.ObjectReference{Name: secret.Name})
+	_, err = clusterClientset.CoreV1().ServiceAccounts(namespace).Update(ctx, sa, metav1.UpdateOptions{})
+	switch {
+	case err != nil:
+		klog.Infof("Could not update service account %s/%s in target cluster %s due to: %v", namespace, saName, joiningClusterName, err)
 		return "", err
 	default:
 		return saName, nil

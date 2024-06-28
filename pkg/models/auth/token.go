@@ -25,7 +25,7 @@ import (
 
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication"
 
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication/token"
 	"kubesphere.io/kubesphere/pkg/simple/client/cache"
@@ -129,9 +129,7 @@ func (t *tokenOperator) tokenCacheValidate(username, token string) error {
 	if exist, err := t.cache.Exists(key); err != nil {
 		return err
 	} else if !exist {
-		err = errors.New("token not found in cache")
-		klog.V(4).Info(fmt.Errorf("%s: %s", err, token))
-		return err
+		return errors.New("token not found in cache")
 	}
 	return nil
 }

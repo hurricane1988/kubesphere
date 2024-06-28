@@ -23,16 +23,16 @@ import (
 
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/cli-runtime/pkg/resource"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 	cmdutil "k8s.io/kubectl/pkg/cmd/util"
 )
 
 func Parse(reader io.Reader, namespace, rlsName string, local bool) ([]*resource.Info, error) {
-	if klog.V(2) {
+	if klog.V(2).Enabled() {
 		klog.Infof("parse resources, namespace: %s, release: %s", namespace, rlsName)
 		start := time.Now()
 		defer func() {
-			klog.Infof("parse resources end, namespace: %s, release: %s, cost: %v", namespace, rlsName, time.Now().Sub(start))
+			klog.Infof("parse resources end, namespace: %s, release: %s, cost: %v", namespace, rlsName, time.Since(start))
 		}()
 	}
 
@@ -41,7 +41,7 @@ func Parse(reader io.Reader, namespace, rlsName string, local bool) ([]*resource
 	f := cmdutil.NewFactory(matchVersionKubeConfigFlags)
 	builder := f.NewBuilder().Unstructured().NamespaceParam(namespace).ContinueOnError().Stream(reader, rlsName).Flatten()
 
-	if local == true {
+	if local {
 		builder = builder.Local()
 	}
 	r := builder.Do()
@@ -50,7 +50,7 @@ func Parse(reader io.Reader, namespace, rlsName string, local bool) ([]*resource
 		return nil, err
 	}
 
-	if local == false {
+	if !local {
 		for i := range infos {
 			infos[i].Namespace = namespace
 			err := infos[i].Get()

@@ -17,24 +17,23 @@ limitations under the License.
 package clusterclient
 
 import (
-	"fmt"
 	"net/http"
 	"net/url"
+	"reflect"
 	"sync"
 
-	corev1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	clusterv1alpha1 "kubesphere.io/api/cluster/v1alpha1"
 
+	kubesphere "kubesphere.io/kubesphere/pkg/client/clientset/versioned"
 	clusterinformer "kubesphere.io/kubesphere/pkg/client/informers/externalversions/cluster/v1alpha1"
-)
-
-var (
-	ClusterNotExistsFormat = "cluster %s not exists"
+	clusterlister "kubesphere.io/kubesphere/pkg/client/listers/cluster/v1alpha1"
+	clusterutils "kubesphere.io/kubesphere/pkg/controller/cluster/utils"
 )
 
 type innerCluster struct {
@@ -44,12 +43,10 @@ type innerCluster struct {
 }
 
 type clusterClients struct {
-	sync.RWMutex
-	clusterMap        map[string]*clusterv1alpha1.Cluster
-	clusterKubeconfig map[string]string
+	clusterLister clusterlister.ClusterLister
 
-	// build a in memory cluster cache to speed things up
-	innerClusters map[string]*innerCluster
+	// build an in memory cluster cache to speed things up
+	innerClusters sync.Map
 }
 
 type ClusterClients interface {
@@ -58,79 +55,35 @@ type ClusterClients interface {
 	GetClusterKubeconfig(string) (string, error)
 	Get(string) (*clusterv1alpha1.Cluster, error)
 	GetInnerCluster(string) *innerCluster
+	GetKubernetesClientSet(string) (*kubernetes.Clientset, error)
+	GetKubeSphereClientSet(string) (*kubesphere.Clientset, error)
 }
-
-func (c *clusterClients) IsClusterReady(cluster *clusterv1alpha1.Cluster) bool {
-	for _, condition := range cluster.Status.Conditions {
-		if condition.Type == clusterv1alpha1.ClusterReady && condition.Status == corev1.ConditionTrue {
-			return true
-		}
-	}
-	return false
-}
-
-func (c *clusterClients) IsHostCluster(cluster *clusterv1alpha1.Cluster) bool {
-	if _, ok := cluster.Labels[clusterv1alpha1.HostCluster]; ok {
-		return true
-	}
-	return false
-}
-
-func (c *clusterClients) GetInnerCluster(name string) *innerCluster {
-	c.RLock()
-	defer c.RUnlock()
-	if cluster, ok := c.innerClusters[name]; ok {
-		return cluster
-	}
-	return nil
-}
-
-var c *clusterClients
-var lock sync.Mutex
 
 func NewClusterClient(clusterInformer clusterinformer.ClusterInformer) ClusterClients {
-
-	if c == nil {
-		lock.Lock()
-		defer lock.Unlock()
-
-		if c != nil {
-			return c
-		}
-
-		c = &clusterClients{
-			clusterMap:        map[string]*clusterv1alpha1.Cluster{},
-			clusterKubeconfig: map[string]string{},
-			innerClusters:     make(map[string]*innerCluster),
-		}
-
-		clusterInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-			AddFunc: func(obj interface{}) {
-				c.addCluster(obj)
-			},
-			UpdateFunc: func(oldObj, newObj interface{}) {
-				c.removeCluster(oldObj)
-				c.addCluster(newObj)
-			},
-			DeleteFunc: func(obj interface{}) {
-				c.removeCluster(obj)
-			},
-		})
+	c := &clusterClients{
+		clusterLister: clusterInformer.Lister(),
 	}
 
+	clusterInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+			c.addCluster(obj)
+		},
+		UpdateFunc: func(oldObj, newObj interface{}) {
+			oldCluster := oldObj.(*clusterv1alpha1.Cluster)
+			newCluster := newObj.(*clusterv1alpha1.Cluster)
+			if !reflect.DeepEqual(oldCluster.Spec, newCluster.Spec) {
+				c.addCluster(newObj)
+			}
+		},
+		DeleteFunc: c.removeCluster,
+	})
 	return c
 }
 
 func (c *clusterClients) removeCluster(obj interface{}) {
 	cluster := obj.(*clusterv1alpha1.Cluster)
 	klog.V(4).Infof("remove cluster %s", cluster.Name)
-	c.Lock()
-	if _, ok := c.clusterMap[cluster.Name]; ok {
-		delete(c.clusterMap, cluster.Name)
-		delete(c.innerClusters, cluster.Name)
-		delete(c.clusterKubeconfig, cluster.Name)
-	}
-	c.Unlock()
+	c.innerClusters.Delete(cluster.Name)
 }
 
 func newInnerCluster(cluster *clusterv1alpha1.Cluster) *innerCluster {
@@ -172,39 +125,91 @@ func newInnerCluster(cluster *clusterv1alpha1.Cluster) *innerCluster {
 	}
 }
 
-func (c *clusterClients) addCluster(obj interface{}) {
+func (c *clusterClients) addCluster(obj interface{}) *innerCluster {
 	cluster := obj.(*clusterv1alpha1.Cluster)
 	klog.V(4).Infof("add new cluster %s", cluster.Name)
 	_, err := url.Parse(cluster.Spec.Connection.KubernetesAPIEndpoint)
 	if err != nil {
 		klog.Errorf("Parse kubernetes apiserver endpoint %s failed, %v", cluster.Spec.Connection.KubernetesAPIEndpoint, err)
-		return
+		return nil
 	}
 
-	innerCluster := newInnerCluster(cluster)
-	c.Lock()
-	c.clusterMap[cluster.Name] = cluster
-	c.clusterKubeconfig[cluster.Name] = string(cluster.Spec.Connection.KubeConfig)
-	c.innerClusters[cluster.Name] = innerCluster
-	c.Unlock()
-}
-
-func (c *clusterClients) GetClusterKubeconfig(clusterName string) (string, error) {
-	c.RLock()
-	defer c.RUnlock()
-	if c, exists := c.clusterKubeconfig[clusterName]; exists {
-		return c, nil
-	} else {
-		return "", fmt.Errorf(ClusterNotExistsFormat, clusterName)
-	}
+	inner := newInnerCluster(cluster)
+	c.innerClusters.Store(cluster.Name, inner)
+	return inner
 }
 
 func (c *clusterClients) Get(clusterName string) (*clusterv1alpha1.Cluster, error) {
-	c.RLock()
-	defer c.RUnlock()
-	if cluster, exists := c.clusterMap[clusterName]; exists {
-		return cluster, nil
-	} else {
-		return nil, fmt.Errorf(ClusterNotExistsFormat, clusterName)
+	return c.clusterLister.Get(clusterName)
+}
+
+func (c *clusterClients) GetClusterKubeconfig(clusterName string) (string, error) {
+	cluster, err := c.clusterLister.Get(clusterName)
+	if err != nil {
+		return "", err
 	}
+	return string(cluster.Spec.Connection.KubeConfig), nil
+}
+
+func (c *clusterClients) GetInnerCluster(name string) *innerCluster {
+	if inner, ok := c.innerClusters.Load(name); ok {
+		return inner.(*innerCluster)
+	} else if cluster, err := c.clusterLister.Get(name); err == nil {
+		// double check if the cluster exists but is not cached
+		return c.addCluster(cluster)
+	}
+	return nil
+}
+
+func (c *clusterClients) IsClusterReady(cluster *clusterv1alpha1.Cluster) bool {
+	return clusterutils.IsClusterReady(cluster)
+}
+
+func (c *clusterClients) IsHostCluster(cluster *clusterv1alpha1.Cluster) bool {
+	if _, ok := cluster.Labels[clusterv1alpha1.HostCluster]; ok {
+		return true
+	}
+	return false
+}
+
+func (c *clusterClients) GetKubeSphereClientSet(name string) (*kubesphere.Clientset, error) {
+	kubeconfig, err := c.GetClusterKubeconfig(name)
+	if err != nil {
+		return nil, err
+	}
+	restConfig, err := newRestConfigFromString(kubeconfig)
+	if err != nil {
+		return nil, err
+	}
+	clientSet, err := kubesphere.NewForConfig(restConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	return clientSet, nil
+}
+
+func (c *clusterClients) GetKubernetesClientSet(name string) (*kubernetes.Clientset, error) {
+	kubeconfig, err := c.GetClusterKubeconfig(name)
+	if err != nil {
+		return nil, err
+	}
+	restConfig, err := newRestConfigFromString(kubeconfig)
+	if err != nil {
+		return nil, err
+	}
+	clientSet, err := kubernetes.NewForConfig(restConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	return clientSet, nil
+}
+
+func newRestConfigFromString(kubeconfig string) (*rest.Config, error) {
+	bytes, err := clientcmd.NewClientConfigFromBytes([]byte(kubeconfig))
+	if err != nil {
+		return nil, err
+	}
+	return bytes.ClientConfig()
 }

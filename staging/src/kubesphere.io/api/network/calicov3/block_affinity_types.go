@@ -17,11 +17,11 @@ package calicov3
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	v3 "github.com/projectcalico/libcalico-go/lib/apis/v3"
+	v3 "github.com/projectcalico/calico/libcalico-go/lib/apis/v3"
 )
 
 // +genclient
-// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:object:root=true
 // +genclient:nonNamespaced
 // +k8s:openapi-gen=true
 // +kubebuilder:resource:scope=Cluster
@@ -31,7 +31,7 @@ type BlockAffinity struct {
 	Spec              v3.BlockAffinitySpec `json:"spec,omitempty"`
 }
 
-// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:object:root=true
 
 // BlockAffinityList contains a list of BlockAffinity resources.
 type BlockAffinityList struct {

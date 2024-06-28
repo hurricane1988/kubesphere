@@ -21,9 +21,9 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/emicklei/go-restful"
+	"github.com/emicklei/go-restful/v3"
 	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 )
 
 // Avoid emitting errors that look like valid HTML. Quotes are okay.

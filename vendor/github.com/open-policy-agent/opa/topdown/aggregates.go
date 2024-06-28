@@ -11,32 +11,36 @@ import (
 	"github.com/open-policy-agent/opa/topdown/builtins"
 )
 
-func builtinCount(a ast.Value) (ast.Value, error) {
-	switch a := a.(type) {
-	case ast.Array:
-		return ast.IntNumberTerm(len(a)).Value, nil
+func builtinCount(_ BuiltinContext, operands []*ast.Term, iter func(*ast.Term) error) error {
+	switch a := operands[0].Value.(type) {
+	case *ast.Array:
+		return iter(ast.IntNumberTerm(a.Len()))
 	case ast.Object:
-		return ast.IntNumberTerm(a.Len()).Value, nil
+		return iter(ast.IntNumberTerm(a.Len()))
 	case ast.Set:
-		return ast.IntNumberTerm(a.Len()).Value, nil
+		return iter(ast.IntNumberTerm(a.Len()))
 	case ast.String:
-		return ast.IntNumberTerm(len(a)).Value, nil
+		return iter(ast.IntNumberTerm(len([]rune(a))))
 	}
-	return nil, builtins.NewOperandTypeErr(1, a, "array", "object", "set")
+	return builtins.NewOperandTypeErr(1, operands[0].Value, "array", "object", "set", "string")
 }
 
-func builtinSum(a ast.Value) (ast.Value, error) {
-	switch a := a.(type) {
-	case ast.Array:
+func builtinSum(_ BuiltinContext, operands []*ast.Term, iter func(*ast.Term) error) error {
+	switch a := operands[0].Value.(type) {
+	case *ast.Array:
 		sum := big.NewFloat(0)
-		for _, x := range a {
+		err := a.Iter(func(x *ast.Term) error {
 			n, ok := x.Value.(ast.Number)
 			if !ok {
-				return nil, builtins.NewOperandElementErr(1, a, x.Value, "number")
+				return builtins.NewOperandElementErr(1, a, x.Value, "number")
 			}
 			sum = new(big.Float).Add(sum, builtins.NumberToFloat(n))
+			return nil
+		})
+		if err != nil {
+			return err
 		}
-		return builtins.FloatToNumber(sum), nil
+		return iter(ast.NewTerm(builtins.FloatToNumber(sum)))
 	case ast.Set:
 		sum := big.NewFloat(0)
 		err := a.Iter(func(x *ast.Term) error {
@@ -47,23 +51,30 @@ func builtinSum(a ast.Value) (ast.Value, error) {
 			sum = new(big.Float).Add(sum, builtins.NumberToFloat(n))
 			return nil
 		})
-		return builtins.FloatToNumber(sum), err
+		if err != nil {
+			return err
+		}
+		return iter(ast.NewTerm(builtins.FloatToNumber(sum)))
 	}
-	return nil, builtins.NewOperandTypeErr(1, a, "set", "array")
+	return builtins.NewOperandTypeErr(1, operands[0].Value, "set", "array")
 }
 
-func builtinProduct(a ast.Value) (ast.Value, error) {
-	switch a := a.(type) {
-	case ast.Array:
+func builtinProduct(_ BuiltinContext, operands []*ast.Term, iter func(*ast.Term) error) error {
+	switch a := operands[0].Value.(type) {
+	case *ast.Array:
 		product := big.NewFloat(1)
-		for _, x := range a {
+		err := a.Iter(func(x *ast.Term) error {
 			n, ok := x.Value.(ast.Number)
 			if !ok {
-				return nil, builtins.NewOperandElementErr(1, a, x.Value, "number")
+				return builtins.NewOperandElementErr(1, a, x.Value, "number")
 			}
 			product = new(big.Float).Mul(product, builtins.NumberToFloat(n))
+			return nil
+		})
+		if err != nil {
+			return err
 		}
-		return builtins.FloatToNumber(product), nil
+		return iter(ast.NewTerm(builtins.FloatToNumber(product)))
 	case ast.Set:
 		product := big.NewFloat(1)
 		err := a.Iter(func(x *ast.Term) error {
@@ -74,27 +85,30 @@ func builtinProduct(a ast.Value) (ast.Value, error) {
 			product = new(big.Float).Mul(product, builtins.NumberToFloat(n))
 			return nil
 		})
-		return builtins.FloatToNumber(product), err
+		if err != nil {
+			return err
+		}
+		return iter(ast.NewTerm(builtins.FloatToNumber(product)))
 	}
-	return nil, builtins.NewOperandTypeErr(1, a, "set", "array")
+	return builtins.NewOperandTypeErr(1, operands[0].Value, "set", "array")
 }
 
-func builtinMax(a ast.Value) (ast.Value, error) {
-	switch a := a.(type) {
-	case ast.Array:
-		if len(a) == 0 {
-			return nil, BuiltinEmpty{}
+func builtinMax(_ BuiltinContext, operands []*ast.Term, iter func(*ast.Term) error) error {
+	switch a := operands[0].Value.(type) {
+	case *ast.Array:
+		if a.Len() == 0 {
+			return nil
 		}
 		var max = ast.Value(ast.Null{})
-		for i := range a {
-			if ast.Compare(max, a[i].Value) <= 0 {
-				max = a[i].Value
+		a.Foreach(func(x *ast.Term) {
+			if ast.Compare(max, x.Value) <= 0 {
+				max = x.Value
 			}
-		}
-		return max, nil
+		})
+		return iter(ast.NewTerm(max))
 	case ast.Set:
 		if a.Len() == 0 {
-			return nil, BuiltinEmpty{}
+			return nil
 		}
 		max, err := a.Reduce(ast.NullTerm(), func(max *ast.Term, elem *ast.Term) (*ast.Term, error) {
 			if ast.Compare(max, elem) <= 0 {
@@ -102,28 +116,31 @@ func builtinMax(a ast.Value) (ast.Value, error) {
 			}
 			return max, nil
 		})
-		return max.Value, err
+		if err != nil {
+			return err
+		}
+		return iter(max)
 	}
 
-	return nil, builtins.NewOperandTypeErr(1, a, "set", "array")
+	return builtins.NewOperandTypeErr(1, operands[0].Value, "set", "array")
 }
 
-func builtinMin(a ast.Value) (ast.Value, error) {
-	switch a := a.(type) {
-	case ast.Array:
-		if len(a) == 0 {
-			return nil, BuiltinEmpty{}
+func builtinMin(_ BuiltinContext, operands []*ast.Term, iter func(*ast.Term) error) error {
+	switch a := operands[0].Value.(type) {
+	case *ast.Array:
+		if a.Len() == 0 {
+			return nil
 		}
-		min := a[0].Value
-		for i := range a {
-			if ast.Compare(min, a[i].Value) >= 0 {
-				min = a[i].Value
+		min := a.Elem(0).Value
+		a.Foreach(func(x *ast.Term) {
+			if ast.Compare(min, x.Value) >= 0 {
+				min = x.Value
 			}
-		}
-		return min, nil
+		})
+		return iter(ast.NewTerm(min))
 	case ast.Set:
 		if a.Len() == 0 {
-			return nil, BuiltinEmpty{}
+			return nil
 		}
 		min, err := a.Reduce(ast.NullTerm(), func(min *ast.Term, elem *ast.Term) (*ast.Term, error) {
 			// The null term is considered to be less than any other term,
@@ -138,79 +155,124 @@ func builtinMin(a ast.Value) (ast.Value, error) {
 			}
 			return min, nil
 		})
-		return min.Value, err
+		if err != nil {
+			return err
+		}
+		return iter(min)
 	}
 
-	return nil, builtins.NewOperandTypeErr(1, a, "set", "array")
+	return builtins.NewOperandTypeErr(1, operands[0].Value, "set", "array")
 }
 
-func builtinSort(a ast.Value) (ast.Value, error) {
-	switch a := a.(type) {
-	case ast.Array:
-		return a.Sorted(), nil
+func builtinSort(_ BuiltinContext, operands []*ast.Term, iter func(*ast.Term) error) error {
+	switch a := operands[0].Value.(type) {
+	case *ast.Array:
+		return iter(ast.NewTerm(a.Sorted()))
 	case ast.Set:
-		return a.Sorted(), nil
+		return iter(ast.NewTerm(a.Sorted()))
 	}
-	return nil, builtins.NewOperandTypeErr(1, a, "set", "array")
+	return builtins.NewOperandTypeErr(1, operands[0].Value, "set", "array")
 }
 
-func builtinAll(a ast.Value) (ast.Value, error) {
-	switch val := a.(type) {
+func builtinAll(_ BuiltinContext, operands []*ast.Term, iter func(*ast.Term) error) error {
+	switch val := operands[0].Value.(type) {
 	case ast.Set:
 		res := true
 		match := ast.BooleanTerm(true)
-		val.Foreach(func(term *ast.Term) {
-			if !term.Equal(match) {
+		val.Until(func(term *ast.Term) bool {
+			if !match.Equal(term) {
 				res = false
+				return true
 			}
+			return false
 		})
-		return ast.Boolean(res), nil
-	case ast.Array:
+		return iter(ast.BooleanTerm(res))
+	case *ast.Array:
 		res := true
 		match := ast.BooleanTerm(true)
-		for _, term := range val {
-			if !term.Equal(match) {
+		val.Until(func(term *ast.Term) bool {
+			if !match.Equal(term) {
 				res = false
+				return true
 			}
-		}
-		return ast.Boolean(res), nil
+			return false
+		})
+		return iter(ast.BooleanTerm(res))
 	default:
-		return nil, builtins.NewOperandTypeErr(1, a, "array", "set")
+		return builtins.NewOperandTypeErr(1, operands[0].Value, "array", "set")
 	}
 }
 
-func builtinAny(a ast.Value) (ast.Value, error) {
-	switch val := a.(type) {
+func builtinAny(_ BuiltinContext, operands []*ast.Term, iter func(*ast.Term) error) error {
+	switch val := operands[0].Value.(type) {
 	case ast.Set:
+		res := val.Len() > 0 && val.Contains(ast.BooleanTerm(true))
+		return iter(ast.BooleanTerm(res))
+	case *ast.Array:
 		res := false
 		match := ast.BooleanTerm(true)
-		val.Foreach(func(term *ast.Term) {
-			if term.Equal(match) {
+		val.Until(func(term *ast.Term) bool {
+			if match.Equal(term) {
 				res = true
+				return true
 			}
+			return false
 		})
-		return ast.Boolean(res), nil
-	case ast.Array:
-		res := false
-		match := ast.BooleanTerm(true)
-		for _, term := range val {
-			if term.Equal(match) {
-				res = true
-			}
-		}
-		return ast.Boolean(res), nil
+		return iter(ast.BooleanTerm(res))
 	default:
-		return nil, builtins.NewOperandTypeErr(1, a, "array", "set")
+		return builtins.NewOperandTypeErr(1, operands[0].Value, "array", "set")
 	}
+}
+
+func builtinMember(_ BuiltinContext, operands []*ast.Term, iter func(*ast.Term) error) error {
+	containee := operands[0]
+	switch c := operands[1].Value.(type) {
+	case ast.Set:
+		return iter(ast.BooleanTerm(c.Contains(containee)))
+	case *ast.Array:
+		ret := false
+		c.Until(func(v *ast.Term) bool {
+			if v.Value.Compare(containee.Value) == 0 {
+				ret = true
+			}
+			return ret
+		})
+		return iter(ast.BooleanTerm(ret))
+	case ast.Object:
+		ret := false
+		c.Until(func(_, v *ast.Term) bool {
+			if v.Value.Compare(containee.Value) == 0 {
+				ret = true
+			}
+			return ret
+		})
+		return iter(ast.BooleanTerm(ret))
+	}
+	return iter(ast.BooleanTerm(false))
+}
+
+func builtinMemberWithKey(_ BuiltinContext, operands []*ast.Term, iter func(*ast.Term) error) error {
+	key, val := operands[0], operands[1]
+	switch c := operands[2].Value.(type) {
+	case interface{ Get(*ast.Term) *ast.Term }:
+		ret := false
+		if act := c.Get(key); act != nil {
+			ret = act.Value.Compare(val.Value) == 0
+		}
+		return iter(ast.BooleanTerm(ret))
+	}
+	return iter(ast.BooleanTerm(false))
 }
 
 func init() {
-	RegisterFunctionalBuiltin1(ast.Count.Name, builtinCount)
-	RegisterFunctionalBuiltin1(ast.Sum.Name, builtinSum)
-	RegisterFunctionalBuiltin1(ast.Product.Name, builtinProduct)
-	RegisterFunctionalBuiltin1(ast.Max.Name, builtinMax)
-	RegisterFunctionalBuiltin1(ast.Min.Name, builtinMin)
-	RegisterFunctionalBuiltin1(ast.Sort.Name, builtinSort)
-	RegisterFunctionalBuiltin1(ast.Any.Name, builtinAny)
-	RegisterFunctionalBuiltin1(ast.All.Name, builtinAll)
+	RegisterBuiltinFunc(ast.Count.Name, builtinCount)
+	RegisterBuiltinFunc(ast.Sum.Name, builtinSum)
+	RegisterBuiltinFunc(ast.Product.Name, builtinProduct)
+	RegisterBuiltinFunc(ast.Max.Name, builtinMax)
+	RegisterBuiltinFunc(ast.Min.Name, builtinMin)
+	RegisterBuiltinFunc(ast.Sort.Name, builtinSort)
+	RegisterBuiltinFunc(ast.Any.Name, builtinAny)
+	RegisterBuiltinFunc(ast.All.Name, builtinAll)
+	RegisterBuiltinFunc(ast.Member.Name, builtinMember)
+	RegisterBuiltinFunc(ast.MemberWithKey.Name, builtinMemberWithKey)
 }

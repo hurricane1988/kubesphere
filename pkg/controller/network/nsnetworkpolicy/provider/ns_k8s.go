@@ -24,7 +24,7 @@ import (
 	"sync"
 	"time"
 
-	rcache "github.com/projectcalico/kube-controllers/pkg/cache"
+	rcache "github.com/projectcalico/calico/kube-controllers/pkg/cache"
 	netv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -34,7 +34,7 @@ import (
 	informerv1 "k8s.io/client-go/informers/networking/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	"kubesphere.io/api/network/v1alpha1"
 )
@@ -89,6 +89,7 @@ func (c *k8sPolicyController) run(threadiness int, reconcilerPeriod string, stop
 	// Wait until we are in sync with the Kubernetes API before starting the
 	// resource cache.
 	klog.Info("Waiting to sync with Kubernetes API (NetworkPolicy)")
+	//nolint:staticcheck
 	if ok := cache.WaitForCacheSync(stopCh, c.hasSynced); !ok {
 	}
 	klog.Infof("Finished syncing with Kubernetes API (NetworkPolicy)")
@@ -217,7 +218,7 @@ func (c *k8sPolicyController) handleErr(err error, key string) {
 	klog.Errorf("Dropping NetworkPolicy %q out of the queue: %v", key, err)
 }
 
-//NewNsNetworkPolicyProvider sync k8s NetworkPolicy
+// NewNsNetworkPolicyProvider sync k8s NetworkPolicy
 func NewNsNetworkPolicyProvider(client kubernetes.Interface, npInformer informerv1.NetworkPolicyInformer) (NsNetworkPolicyProvider, error) {
 	var once sync.Once
 

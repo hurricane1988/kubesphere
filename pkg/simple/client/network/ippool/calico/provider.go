@@ -26,9 +26,9 @@ import (
 
 	k8sinformers "k8s.io/client-go/informers"
 
-	v3 "github.com/projectcalico/libcalico-go/lib/apis/v3"
-	"github.com/projectcalico/libcalico-go/lib/backend/model"
-	cnet "github.com/projectcalico/libcalico-go/lib/net"
+	v3 "github.com/projectcalico/api/pkg/apis/projectcalico/v3"
+	"github.com/projectcalico/calico/libcalico-go/lib/backend/model"
+	cnet "github.com/projectcalico/calico/libcalico-go/lib/net"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -41,7 +41,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/workqueue"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	"kubesphere.io/api/network/calicov3"
@@ -351,7 +351,7 @@ func (p *provider) DeleteIPPool(pool *v1alpha1.IPPool) (bool, error) {
 	return true, nil
 }
 
-//Synchronizing address pools at boot time
+// Synchronizing address pools at boot time
 func (p *provider) syncIPPools() error {
 	calicoPools, err := p.client.CrdCalicov3().IPPools().List(context.TODO(), v1.ListOptions{})
 	if err != nil {

@@ -32,7 +32,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/informers"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"kubesphere.io/api/application/v1alpha1"
@@ -58,7 +58,7 @@ type ReleaseInterface interface {
 	CreateApplication(workspace, clusterName, namespace string, request CreateClusterRequest) error
 	ModifyApplication(request ModifyClusterAttributesRequest) error
 	DeleteApplication(workspace, clusterName, namespace, id string) error
-	UpgradeApplication(request UpgradeClusterRequest) error
+	UpgradeApplication(request UpgradeClusterRequest, applicationId string) error
 }
 
 type releaseOperator struct {
@@ -70,13 +70,13 @@ type releaseOperator struct {
 	clusterClients   clusterclient.ClusterClients
 }
 
-func newReleaseOperator(cached reposcache.ReposCache, k8sFactory informers.SharedInformerFactory, ksFactory externalversions.SharedInformerFactory, ksClient versioned.Interface) ReleaseInterface {
+func newReleaseOperator(cached reposcache.ReposCache, k8sFactory informers.SharedInformerFactory, ksFactory externalversions.SharedInformerFactory, ksClient versioned.Interface, cc clusterclient.ClusterClients) ReleaseInterface {
 	c := &releaseOperator{
 		informers:        k8sFactory,
 		rlsClient:        ksClient.ApplicationV1alpha1().HelmReleases(),
 		rlsLister:        ksFactory.Application().V1alpha1().HelmReleases().Lister(),
 		cachedRepos:      cached,
-		clusterClients:   clusterclient.NewClusterClient(ksFactory.Cluster().V1alpha1().Clusters()),
+		clusterClients:   cc,
 		appVersionLister: ksFactory.Application().V1alpha1().HelmApplicationVersions().Lister(),
 	}
 
@@ -92,17 +92,16 @@ type Application struct {
 	ReleaseInfo []runtime.Object `json:"releaseInfo,omitempty" description:"release info"`
 }
 
-func (c *releaseOperator) UpgradeApplication(request UpgradeClusterRequest) error {
-	oldRls, err := c.rlsLister.Get(request.ClusterId)
-
+func (c *releaseOperator) UpgradeApplication(request UpgradeClusterRequest, applicationId string) error {
+	oldRls, err := c.rlsLister.Get(applicationId)
 	// todo check namespace
 	if err != nil {
-		klog.Errorf("get release %s/%s failed, error: %s", request.Namespace, request.ClusterId, err)
+		klog.Errorf("get release %s/%s failed, error: %s", request.Namespace, applicationId, err)
 		return err
 	}
 
 	switch oldRls.Status.State {
-	case v1alpha1.StateActive, v1alpha1.HelmStatusUpgraded, v1alpha1.HelmStatusCreated:
+	case v1alpha1.StateActive, v1alpha1.HelmStatusUpgraded, v1alpha1.HelmStatusCreated, v1alpha1.HelmStatusFailed:
 		// no operation
 	default:
 		return errors.New("can not upgrade application now")
@@ -128,14 +127,14 @@ func (c *releaseOperator) UpgradeApplication(request UpgradeClusterRequest) erro
 	}
 
 	patch := client.MergeFrom(oldRls)
-	data, err := patch.Data(newRls)
+	data, _ := patch.Data(newRls)
 
-	newRls, err = c.rlsClient.Patch(context.TODO(), request.ClusterId, patch.Type(), data, metav1.PatchOptions{})
+	_, err = c.rlsClient.Patch(context.TODO(), applicationId, patch.Type(), data, metav1.PatchOptions{})
 	if err != nil {
-		klog.Errorf("patch release %s/%s failed, error: %s", request.Namespace, request.ClusterId, err)
+		klog.Errorf("patch release %s/%s failed, error: %s", request.Namespace, applicationId, err)
 		return err
 	} else {
-		klog.V(2).Infof("patch release %s/%s success", request.Namespace, request.ClusterId)
+		klog.V(2).Infof("patch release %s/%s success", request.Namespace, applicationId)
 	}
 
 	return nil
@@ -198,7 +197,7 @@ func (c *releaseOperator) CreateApplication(workspace, clusterName, namespace st
 		rls.Labels[constants.ChartRepoIdLabelKey] = repoId
 	}
 
-	rls, err = c.rlsClient.Create(context.TODO(), rls, metav1.CreateOptions{})
+	_, err = c.rlsClient.Create(context.TODO(), rls, metav1.CreateOptions{})
 
 	if err != nil {
 		klog.Errorln(err)
@@ -379,7 +378,7 @@ func (c *releaseOperator) DescribeApplication(workspace, clusterName, namespace,
 
 func (c *releaseOperator) DeleteApplication(workspace, clusterName, namespace, id string) error {
 
-	rls, err := c.rlsLister.Get(id)
+	_, err := c.rlsLister.Get(id)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			return nil
@@ -389,8 +388,6 @@ func (c *releaseOperator) DeleteApplication(workspace, clusterName, namespace, i
 	}
 
 	// TODO, check workspace, cluster and namespace
-	if rls.GetWorkspace() != workspace || rls.GetRlsCluster() != clusterName || rls.GetRlsNamespace() != namespace {
-	}
 
 	err = c.rlsClient.Delete(context.TODO(), id, metav1.DeleteOptions{})
 
@@ -412,24 +409,6 @@ func (c *releaseOperator) getAppVersion(repoId, id string) (ret *v1alpha1.HelmAp
 
 	if repoId != "" && repoId != v1alpha1.AppStoreRepoId {
 		return nil, fmt.Errorf("app version not found")
-	}
-	ret, err = c.appVersionLister.Get(id)
-
-	if err != nil && !apierrors.IsNotFound(err) {
-		klog.Error(err)
-		return nil, err
-	}
-	return
-}
-
-// get app version from repo and helm application
-func (c *releaseOperator) getAppVersionWithData(repoId, id string) (ret *v1alpha1.HelmApplicationVersion, err error) {
-	if ver, exists, _ := c.cachedRepos.GetAppVersionWithData(id); exists {
-		return ver, nil
-	}
-
-	if repoId != "" && repoId != v1alpha1.AppStoreRepoId {
-		return nil, fmt.Errorf("not found")
 	}
 	ret, err = c.appVersionLister.Get(id)
 

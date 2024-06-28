@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -29,7 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	listersv1 "k8s.io/client-go/listers/core/v1"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
 	tenantv1alpha1 "kubesphere.io/api/tenant/v1alpha1"
@@ -141,6 +141,7 @@ func NewOperator(ksClient kubesphere.Interface, k8sClient kubernetes.Interface, 
 }
 
 func (am *amOperator) GetGlobalRoleOfUser(username string) (*iamv1alpha2.GlobalRole, error) {
+	//nolint:ineffassign,staticcheck
 	globalRoleBindings, err := am.ListGlobalRoleBindings(username)
 	if len(globalRoleBindings) > 0 {
 		// Usually, only one globalRoleBinding will be found which is created from ks-console.

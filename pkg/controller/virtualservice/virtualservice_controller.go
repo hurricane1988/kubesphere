@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"time"
 
 	apinetworkingv1alpha3 "istio.io/api/networking/v1alpha3"
 	clientgonetworkingv1alpha3 "istio.io/client-go/pkg/apis/networking/v1alpha3"
@@ -42,7 +43,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
-	log "k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	servicemeshv1alpha2 "kubesphere.io/api/servicemesh/v1alpha2"
 
@@ -50,8 +51,6 @@ import (
 	servicemeshinformers "kubesphere.io/kubesphere/pkg/client/informers/externalversions/servicemesh/v1alpha2"
 	servicemeshlisters "kubesphere.io/kubesphere/pkg/client/listers/servicemesh/v1alpha2"
 	"kubesphere.io/kubesphere/pkg/controller/utils/servicemesh"
-
-	"time"
 )
 
 const (
@@ -99,7 +98,7 @@ func NewVirtualServiceController(serviceInformer coreinformers.ServiceInformer,
 
 	broadcaster := record.NewBroadcaster()
 	broadcaster.StartLogging(func(format string, args ...interface{}) {
-		log.Info(fmt.Sprintf(format, args))
+		klog.Info(fmt.Sprintf(format, args))
 	})
 	broadcaster.StartRecordingToSink(&v1core.EventSinkImpl{Interface: client.CoreV1().Events("")})
 	recorder := broadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: "virtualservice-controller"})
@@ -163,8 +162,8 @@ func (v *VirtualServiceController) Run(workers int, stopCh <-chan struct{}) erro
 	defer utilruntime.HandleCrash()
 	defer v.queue.ShutDown()
 
-	log.V(0).Info("starting virtualservice controller")
-	defer log.Info("shutting down virtualservice controller")
+	klog.V(0).Info("starting virtualservice controller")
+	defer klog.Info("shutting down virtualservice controller")
 
 	if !cache.WaitForCacheSync(stopCh, v.serviceSynced, v.virtualServiceSynced, v.destinationRuleSynced, v.strategySynced) {
 		return fmt.Errorf("failed to wait for caches to sync")
@@ -211,9 +210,11 @@ func (v *VirtualServiceController) processNextWorkItem() bool {
 // created virtualservice's name are same as the service name, same
 // as the destinationrule name
 // labels:
-//      servicemesh.kubernetes.io/enabled: ""
-//      app.kubernetes.io/name: bookinfo
-//      app: reviews
+//
+//	servicemesh.kubernetes.io/enabled: ""
+//	app.kubernetes.io/name: bookinfo
+//	app: reviews
+//
 // are used to bind them together.
 // syncService are the main part of reconcile function body, it takes
 // service, destinationrule, strategy as input to create a virtualservice
@@ -222,15 +223,16 @@ func (v *VirtualServiceController) syncService(key string) error {
 	startTime := time.Now()
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
-		log.Error(err, "not a valid controller key", "key", key)
+		klog.Error(err, "not a valid controller key", "key", key)
 		return err
 	}
 
 	// default component name to service name
+	//nolint:ineffassign,staticcheck
 	appName := name
 
 	defer func() {
-		log.V(4).Infof("Finished syncing service virtualservice %s/%s in %s.", namespace, name, time.Since(startTime))
+		klog.V(4).Infof("Finished syncing service virtualservice %s/%s in %s.", namespace, name, time.Since(startTime))
 	}()
 
 	service, err := v.serviceLister.Services(namespace).Get(name)
@@ -239,20 +241,20 @@ func (v *VirtualServiceController) syncService(key string) error {
 			// Delete the corresponding virtualservice, as the service has been deleted.
 			err = v.virtualServiceClient.NetworkingV1alpha3().VirtualServices(namespace).Delete(context.Background(), name, metav1.DeleteOptions{})
 			if err != nil && !errors.IsNotFound(err) {
-				log.Error(err, "delete orphan virtualservice failed", "namespace", namespace, "name", service.Name)
+				klog.Error(err, "delete orphan virtualservice failed", "namespace", namespace, "name", service.Name)
 				return err
 			}
 
 			// delete the orphan strategy if there is any
 			err = v.servicemeshClient.ServicemeshV1alpha2().Strategies(namespace).Delete(context.Background(), name, metav1.DeleteOptions{})
 			if err != nil && !errors.IsNotFound(err) {
-				log.Error(err, "delete orphan strategy failed", "namespace", namespace, "name", service.Name)
+				klog.Error(err, "delete orphan strategy failed", "namespace", namespace, "name", service.Name)
 				return err
 			}
 
 			return nil
 		}
-		log.Error(err, "get service failed", "namespace", namespace, "name", name)
+		klog.Error(err, "get service failed", "namespace", namespace, "name", name)
 		return err
 	}
 
@@ -273,10 +275,10 @@ func (v *VirtualServiceController) syncService(key string) error {
 		if errors.IsNotFound(err) {
 			// there is no destinationrule for this service
 			// maybe corresponding workloads are not created yet
-			log.Info("destination rules for service not found, retrying.", "namespace", namespace, "name", name)
+			klog.Info("destination rules for service not found, retrying.", "namespace", namespace, "name", name)
 			return fmt.Errorf("destination rule for service %s/%s not found", namespace, name)
 		}
-		log.Error(err, "Couldn't get destinationrule for service.", "service", types.NamespacedName{Name: service.Name, Namespace: service.Namespace}.String())
+		klog.Error(err, "Couldn't get destinationrule for service.", "service", types.NamespacedName{Name: service.Name, Namespace: service.Namespace}.String())
 		return err
 	}
 
@@ -289,12 +291,12 @@ func (v *VirtualServiceController) syncService(key string) error {
 	// fetch all strategies applied to service
 	strategies, err := v.strategyLister.Strategies(namespace).List(labels.SelectorFromSet(map[string]string{servicemesh.AppLabel: appName}))
 	if err != nil {
-		log.Error(err, "list strategies for service failed", "namespace", namespace, "name", appName)
+		klog.Error(err, "list strategies for service failed", "namespace", namespace, "name", appName)
 		return err
 	} else if len(strategies) > 1 {
 		// more than one strategies are not allowed, it will cause collision
 		err = fmt.Errorf("more than one strategies applied to service %s/%s is forbbiden", namespace, appName)
-		log.Error(err, "")
+		klog.Error(err, "")
 		return err
 	}
 
@@ -310,72 +312,22 @@ func (v *VirtualServiceController) syncService(key string) error {
 				},
 			}
 		} else {
-			log.Error(err, "cannot get virtualservice ", "namespace", namespace, "name", appName)
+			klog.Error(err, "cannot get virtualservice ", "namespace", namespace, "name", appName)
 			return err
 		}
 	}
 	vs := currentVirtualService.DeepCopy()
-
-	// create a whole new virtualservice
-
-	// TODO(jeff): use FQDN to replace service name
-	vs.Spec.Hosts = []string{name}
-
-	vs.Spec.Http = []*apinetworkingv1alpha3.HTTPRoute{}
-	vs.Spec.Tcp = []*apinetworkingv1alpha3.TCPRoute{}
-
-	// check if service has TCP protocol ports
-	for _, port := range service.Spec.Ports {
-		var route apinetworkingv1alpha3.HTTPRouteDestination
-		var match apinetworkingv1alpha3.HTTPMatchRequest
-		if port.Protocol == v1.ProtocolTCP {
-			route = apinetworkingv1alpha3.HTTPRouteDestination{
-				Destination: &apinetworkingv1alpha3.Destination{
-					Host:   name,
-					Subset: subsets[0].Name,
-					Port: &apinetworkingv1alpha3.PortSelector{
-						Number: uint32(port.Port),
-					},
-				},
-				Weight: 100,
-			}
-
-			match = apinetworkingv1alpha3.HTTPMatchRequest{Port: uint32(port.Port)}
-
-			// a http port, add to HTTPRoute
-
-			if servicemesh.SupportHttpProtocol(port.Name) {
-				httpRoute := apinetworkingv1alpha3.HTTPRoute{
-					Route: []*apinetworkingv1alpha3.HTTPRouteDestination{&route},
-					Match: []*apinetworkingv1alpha3.HTTPMatchRequest{&match},
-				}
-				vs.Spec.Http = append(vs.Spec.Http, &httpRoute)
-			} else {
-				// everything else treated as TCPRoute
-				tcpRoute := apinetworkingv1alpha3.TCPRoute{
-					Route: []*apinetworkingv1alpha3.RouteDestination{
-						{
-							Destination: route.Destination,
-							Weight:      route.Weight,
-						},
-					},
-					Match: []*apinetworkingv1alpha3.L4MatchAttributes{{Port: match.Port}},
-				}
-				vs.Spec.Tcp = append(vs.Spec.Tcp, &tcpRoute)
-			}
-		}
-	}
 
 	if len(strategies) > 0 {
 		// apply strategy spec to virtualservice
 
 		switch strategies[0].Spec.StrategyPolicy {
 		case servicemeshv1alpha2.PolicyPause:
-			break
+			vs.Spec = v.generateDefaultVirtualServiceSpec(name, subsets, service).Spec
 		case servicemeshv1alpha2.PolicyWaitForWorkloadReady:
 			set := v.getSubsets(strategies[0])
 
-			setNames := sets.String{}
+			setNames := sets.New[string]()
 			for i := range subsets {
 				setNames.Insert(subsets[i].Name)
 			}
@@ -388,6 +340,7 @@ func (v *VirtualServiceController) syncService(key string) error {
 			}
 			// strategy has subset that are not ready
 			if nonExist {
+				vs.Spec = v.generateDefaultVirtualServiceSpec(name, subsets, service).Spec
 				break
 			} else {
 				vs.Spec = v.generateVirtualServiceSpec(strategies[0], service).Spec
@@ -397,14 +350,18 @@ func (v *VirtualServiceController) syncService(key string) error {
 		default:
 			vs.Spec = v.generateVirtualServiceSpec(strategies[0], service).Spec
 		}
+	} else {
+		vs.Spec = v.generateDefaultVirtualServiceSpec(name, subsets, service).Spec
 	}
+
+	v.patchHTTPRoute(currentVirtualService.Spec.Http, vs.Spec.Http)
 
 	createVirtualService := len(currentVirtualService.ResourceVersion) == 0
 
 	if !createVirtualService &&
 		reflect.DeepEqual(vs.Spec, currentVirtualService.Spec) &&
 		reflect.DeepEqual(service.Labels, currentVirtualService.Labels) {
-		log.V(4).Info("virtual service are equal, skipping update ")
+		klog.V(4).Info("virtual service are equal, skipping update ")
 		return nil
 	}
 
@@ -417,7 +374,7 @@ func (v *VirtualServiceController) syncService(key string) error {
 
 	if len(newVirtualService.Spec.Http) == 0 && len(newVirtualService.Spec.Tcp) == 0 && len(newVirtualService.Spec.Tls) == 0 {
 		err = fmt.Errorf("service %s/%s doesn't have a valid port spec", namespace, name)
-		log.Error(err, "")
+		klog.Error(err, "")
 		return err
 	}
 
@@ -447,7 +404,7 @@ func (v *VirtualServiceController) addDestinationRule(obj interface{}) {
 	service, err := v.serviceLister.Services(dr.Namespace).Get(dr.Name)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			log.V(3).Info("service not created yet", "namespace", dr.Namespace, "service", dr.Name)
+			klog.V(3).Info("service not created yet", "namespace", dr.Namespace, "service", dr.Name)
 			return
 		}
 		utilruntime.HandleError(fmt.Errorf("unable to get service with name %s/%s", dr.Namespace, dr.Name))
@@ -470,20 +427,20 @@ func (v *VirtualServiceController) addStrategy(obj interface{}) {
 	lbs := servicemesh.ExtractApplicationLabels(&strategy.ObjectMeta)
 	if len(lbs) == 0 {
 		err := fmt.Errorf("invalid strategy %s/%s labels %s, not have required labels", strategy.Namespace, strategy.Name, strategy.Labels)
-		log.Error(err, "")
+		klog.Error(err, "")
 		utilruntime.HandleError(err)
 		return
 	}
 
 	allServices, err := v.serviceLister.Services(strategy.Namespace).List(labels.SelectorFromSet(lbs))
 	if err != nil {
-		log.Error(err, "list services failed")
+		klog.Error(err, "list services failed")
 		utilruntime.HandleError(err)
 		return
 	}
 
 	// avoid insert a key multiple times
-	set := sets.String{}
+	set := sets.New[string]()
 
 	for i := range allServices {
 		service := allServices[i]
@@ -512,18 +469,18 @@ func (v *VirtualServiceController) handleErr(err error, key interface{}) {
 	}
 
 	if v.queue.NumRequeues(key) < maxRetries {
-		log.V(2).Info("Error syncing virtualservice for service retrying.", "key", key, "error", err)
+		klog.V(2).Info("Error syncing virtualservice for service retrying.", "key", key, "error", err)
 		v.queue.AddRateLimited(key)
 		return
 	}
 
-	log.V(4).Info("Dropping service out of the queue.", "key", key, "error", err)
+	klog.V(4).Info("Dropping service out of the queue.", "key", key, "error", err)
 	v.queue.Forget(key)
 	utilruntime.HandleError(err)
 }
 
-func (v *VirtualServiceController) getSubsets(strategy *servicemeshv1alpha2.Strategy) sets.String {
-	set := sets.String{}
+func (v *VirtualServiceController) getSubsets(strategy *servicemeshv1alpha2.Strategy) sets.Set[string] {
+	set := sets.New[string]()
 
 	for _, httpRoute := range strategy.Spec.Template.Spec.Http {
 		for _, dw := range httpRoute.Route {
@@ -581,7 +538,13 @@ func (v *VirtualServiceController) generateVirtualServiceSpec(strategy *servicem
 			}
 			if len(strategyTempSpec.Tcp) > 0 && !servicemesh.SupportHttpProtocol(port.Name) {
 				for _, tcp := range strategyTempSpec.Tcp {
-					tcp.Match = []*apinetworkingv1alpha3.L4MatchAttributes{{Port: uint32(port.Port)}}
+					if len(tcp.Match) == 0 {
+						tcp.Match = []*apinetworkingv1alpha3.L4MatchAttributes{{Port: uint32(port.Port)}}
+					} else {
+						for _, match := range tcp.Match {
+							match.Port = uint32(port.Port)
+						}
+					}
 					for _, r := range tcp.Route {
 						r.Destination.Port = &apinetworkingv1alpha3.PortSelector{Number: uint32(port.Port)}
 					}
@@ -631,4 +594,73 @@ func (v *VirtualServiceController) generateVirtualServiceSpec(strategy *servicem
 
 	servicemesh.FillDestinationPort(vs, service)
 	return vs
+}
+
+// create a whole new virtualservice
+func (v *VirtualServiceController) generateDefaultVirtualServiceSpec(name string, subsets []*apinetworkingv1alpha3.Subset, service *v1.Service) *clientgonetworkingv1alpha3.VirtualService {
+	vs := &clientgonetworkingv1alpha3.VirtualService{}
+	// TODO(jeff): use FQDN to replace service name
+	vs.Spec.Hosts = []string{name}
+	// check if service has TCP protocol ports
+	for _, port := range service.Spec.Ports {
+		var route apinetworkingv1alpha3.HTTPRouteDestination
+		var match apinetworkingv1alpha3.HTTPMatchRequest
+		if port.Protocol == v1.ProtocolTCP {
+			route = apinetworkingv1alpha3.HTTPRouteDestination{
+				Destination: &apinetworkingv1alpha3.Destination{
+					Host:   name,
+					Subset: subsets[0].Name,
+					Port: &apinetworkingv1alpha3.PortSelector{
+						Number: uint32(port.Port),
+					},
+				},
+				Weight: 100,
+			}
+
+			match = apinetworkingv1alpha3.HTTPMatchRequest{Port: uint32(port.Port)}
+
+			// a http port, add to HTTPRoute
+
+			if servicemesh.SupportHttpProtocol(port.Name) {
+				httpRoute := apinetworkingv1alpha3.HTTPRoute{
+					Name:  port.Name,
+					Route: []*apinetworkingv1alpha3.HTTPRouteDestination{&route},
+					Match: []*apinetworkingv1alpha3.HTTPMatchRequest{&match},
+				}
+				vs.Spec.Http = append(vs.Spec.Http, &httpRoute)
+			} else {
+				// everything else treated as TCPRoute
+				tcpRoute := apinetworkingv1alpha3.TCPRoute{
+					Route: []*apinetworkingv1alpha3.RouteDestination{
+						{
+							Destination: route.Destination,
+							Weight:      route.Weight,
+						},
+					},
+					Match: []*apinetworkingv1alpha3.L4MatchAttributes{{Port: match.Port}},
+				}
+				vs.Spec.Tcp = append(vs.Spec.Tcp, &tcpRoute)
+			}
+		}
+	}
+	return vs
+}
+
+// patchHTTPRoute copy all properties from origin to the target HTTPRoute except Match and Route
+func (v *VirtualServiceController) patchHTTPRoute(origin, target []*apinetworkingv1alpha3.HTTPRoute) []*apinetworkingv1alpha3.HTTPRoute {
+	originMap := map[string]*apinetworkingv1alpha3.HTTPRoute{}
+	for _, o := range origin {
+		originMap[o.Name] = o
+	}
+
+	for _, t := range target {
+		if o, ok := originMap[t.Name]; ok {
+			match := t.Match
+			route := t.Route
+			*t = *o
+			t.Match = match
+			t.Route = route
+		}
+	}
+	return target
 }

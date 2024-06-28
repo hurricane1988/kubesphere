@@ -20,7 +20,7 @@ import (
 	"errors"
 	"fmt"
 
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication/oauth"
 )
@@ -47,6 +47,10 @@ type Identity interface {
 
 // SetupWithOptions will verify the configuration and initialize the identityProviders
 func SetupWithOptions(options []oauth.IdentityProviderOptions) error {
+	// Clear all providers when reloading configuration
+	oauthProviders = make(map[string]OAuthProvider)
+	genericProviders = make(map[string]GenericProvider)
+
 	for _, o := range options {
 		if oauthProviders[o.Name] != nil || genericProviders[o.Name] != nil {
 			err := fmt.Errorf("duplicate identity provider found: %s, name must be unique", o.Name)

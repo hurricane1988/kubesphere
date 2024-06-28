@@ -53,6 +53,7 @@ func Test_gatewayOperator_GetGateways(t *testing.T) {
 	v1alpha1.AddToScheme(Scheme)
 	corev1.AddToScheme(Scheme)
 
+	//nolint:staticcheck
 	client := fake.NewFakeClientWithScheme(Scheme)
 
 	client.Create(context.TODO(), &v1alpha1.Gateway{
@@ -69,9 +70,11 @@ func Test_gatewayOperator_GetGateways(t *testing.T) {
 		},
 	})
 
+	//nolint:staticcheck
 	client2 := fake.NewFakeClientWithScheme(Scheme)
 	create_GlobalGateway(client2)
 
+	//nolint:staticcheck
 	client3 := fake.NewFakeClientWithScheme(Scheme)
 	create_LegacyGateway(client3, "project6")
 
@@ -92,7 +95,7 @@ func Test_gatewayOperator_GetGateways(t *testing.T) {
 				},
 			},
 			args: args{
-				namespace: "projct1",
+				namespace: "project1",
 			},
 		},
 		{
@@ -105,7 +108,7 @@ func Test_gatewayOperator_GetGateways(t *testing.T) {
 				},
 			},
 			args: args{
-				namespace: "projct1",
+				namespace: "project1",
 			},
 		},
 		{
@@ -169,7 +172,7 @@ func Test_gatewayOperator_GetGateways(t *testing.T) {
 						Namespace: "kubesphere-controls-system",
 					},
 					Spec: v1alpha1.GatewaySpec{
-						Conroller: v1alpha1.ControllerSpec{
+						Controller: v1alpha1.ControllerSpec{
 							Scope: v1alpha1.Scope{
 								Enabled:   true,
 								Namespace: "project6",
@@ -316,7 +319,7 @@ func Test_gatewayOperator_CreateGateway(t *testing.T) {
 	v1alpha1.AddToScheme(Scheme)
 	corev1.AddToScheme(Scheme)
 	appsv1.AddToScheme(Scheme)
-
+	//nolint:staticcheck
 	client := fake.NewFakeClientWithScheme(Scheme)
 
 	tests := []struct {
@@ -336,17 +339,17 @@ func Test_gatewayOperator_CreateGateway(t *testing.T) {
 				},
 			},
 			args: args{
-				namespace: "projct1",
+				namespace: "project1",
 				obj: &v1alpha1.Gateway{
 					TypeMeta: v1.TypeMeta{
 						Kind:       "Gateway",
 						APIVersion: "gateway.kubesphere.io/v1alpha1",
 					},
 					Spec: v1alpha1.GatewaySpec{
-						Conroller: v1alpha1.ControllerSpec{
+						Controller: v1alpha1.ControllerSpec{
 							Scope: v1alpha1.Scope{
 								Enabled:   true,
-								Namespace: "projct1",
+								Namespace: "project1",
 							},
 						},
 					},
@@ -367,17 +370,17 @@ func Test_gatewayOperator_CreateGateway(t *testing.T) {
 				},
 			},
 			args: args{
-				namespace: "projct2",
+				namespace: "project2",
 				obj: &v1alpha1.Gateway{
 					TypeMeta: v1.TypeMeta{
 						Kind:       "Gateway",
 						APIVersion: "gateway.kubesphere.io/v1alpha1",
 					},
 					Spec: v1alpha1.GatewaySpec{
-						Conroller: v1alpha1.ControllerSpec{
+						Controller: v1alpha1.ControllerSpec{
 							Scope: v1alpha1.Scope{
 								Enabled:   true,
-								Namespace: "projct2",
+								Namespace: "project2",
 							},
 						},
 					},
@@ -420,6 +423,7 @@ func Test_gatewayOperator_DeleteGateway(t *testing.T) {
 
 	var Scheme = runtime.NewScheme()
 	v1alpha1.AddToScheme(Scheme)
+	//nolint:staticcheck
 	client := fake.NewFakeClientWithScheme(Scheme)
 
 	client.Create(context.TODO(), &v1alpha1.Gateway{
@@ -486,6 +490,7 @@ func Test_gatewayOperator_UpdateGateway(t *testing.T) {
 
 	var Scheme = runtime.NewScheme()
 	v1alpha1.AddToScheme(Scheme)
+	//nolint:staticcheck
 	client := fake.NewFakeClientWithScheme(Scheme)
 
 	client.Create(context.TODO(), &v1alpha1.Gateway{
@@ -506,7 +511,7 @@ func Test_gatewayOperator_UpdateGateway(t *testing.T) {
 			ResourceVersion: "1",
 		},
 		Spec: v1alpha1.GatewaySpec{
-			Conroller: v1alpha1.ControllerSpec{
+			Controller: v1alpha1.ControllerSpec{
 				Scope: v1alpha1.Scope{
 					Enabled:   true,
 					Namespace: "project3",
@@ -569,10 +574,12 @@ func Test_gatewayOperator_UpgradeGateway(t *testing.T) {
 
 	var Scheme = runtime.NewScheme()
 	v1alpha1.AddToScheme(Scheme)
+	//nolint:staticcheck
 	client := fake.NewFakeClientWithScheme(Scheme)
 
 	corev1.AddToScheme(Scheme)
 	appsv1.AddToScheme(Scheme)
+	//nolint:staticcheck
 	client2 := fake.NewFakeClientWithScheme(Scheme)
 	create_LegacyGateway(client2, "project2")
 	create_LegacyGatewayConfigMap(client2, "project2")
@@ -593,7 +600,7 @@ func Test_gatewayOperator_UpgradeGateway(t *testing.T) {
 				},
 			},
 			args: args{
-				namespace: "projct1",
+				namespace: "project1",
 			},
 			wantErr: true,
 		},
@@ -615,7 +622,7 @@ func Test_gatewayOperator_UpgradeGateway(t *testing.T) {
 					ResourceVersion: "1",
 				},
 				Spec: v1alpha1.GatewaySpec{
-					Conroller: v1alpha1.ControllerSpec{
+					Controller: v1alpha1.ControllerSpec{
 						Scope: v1alpha1.Scope{
 							Enabled:   true,
 							Namespace: "project2",
@@ -672,7 +679,7 @@ func Test_gatewayOperator_ListGateways(t *testing.T) {
 	v1alpha1.AddToScheme(Scheme)
 	corev1.AddToScheme(Scheme)
 	appsv1.AddToScheme(Scheme)
-
+	//nolint:staticcheck
 	client := fake.NewFakeClientWithScheme(Scheme)
 
 	create_LegacyGateway(client, "project2")
@@ -691,7 +698,7 @@ func Test_gatewayOperator_ListGateways(t *testing.T) {
 				Namespace: "kubesphere-controls-system",
 			},
 			Spec: v1alpha1.GatewaySpec{
-				Conroller: v1alpha1.ControllerSpec{
+				Controller: v1alpha1.ControllerSpec{
 					Scope: v1alpha1.Scope{
 						Enabled:   true,
 						Namespace: "project2",
@@ -780,8 +787,8 @@ type fakeClient struct {
 // Get retrieves an obj for the given object key from the Kubernetes Cluster.
 // obj must be a struct pointer so that obj can be updated with the response
 // returned by the Server.
-func (f *fakeClient) Get(ctx context.Context, key client.ObjectKey, obj client.Object) error {
-	return f.Client.Get(ctx, key, obj)
+func (f *fakeClient) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+	return f.Client.Get(ctx, key, obj, opts...)
 }
 
 // List retrieves list of objects for a given namespace and list options. On a
@@ -830,7 +837,9 @@ func Test_gatewayOperator_status(t *testing.T) {
 	corev1.AddToScheme(Scheme)
 	appsv1.AddToScheme(Scheme)
 
+	//nolint:staticcheck
 	client := fake.NewFakeClientWithScheme(Scheme)
+	//nolint:staticcheck
 	client2 := fake.NewFakeClientWithScheme(Scheme)
 
 	fake := &corev1.Node{

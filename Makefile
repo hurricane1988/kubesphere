@@ -4,10 +4,10 @@
 
 
 # Produce CRDs that work back to Kubernetes 1.11 (no version conversion)
-CRD_OPTIONS ?= "crd:trivialVersions=true"
+CRD_OPTIONS ?= "crd:allowDangerousTypes=true"
 
-GV="network:v1alpha1 servicemesh:v1alpha2 tenant:v1alpha1 tenant:v1alpha2 devops:v1alpha1 iam:v1alpha2 devops:v1alpha3 cluster:v1alpha1 storage:v1alpha1 auditing:v1alpha1 types:v1beta1 quota:v1alpha2 application:v1alpha1 notification:v2beta1"
-MANIFESTS="application/* cluster/* iam/* network/v1alpha1 quota/* storage/* tenant/*"
+GV="network:v1alpha1 servicemesh:v1alpha2 tenant:v1alpha1 tenant:v1alpha2 devops:v1alpha1 iam:v1alpha2 devops:v1alpha3 cluster:v1alpha1 storage:v1alpha1 auditing:v1alpha1 types:v1beta1 types:v1beta2 quota:v1alpha2 application:v1alpha1 notification:v2beta1 notification:v2beta2 gateway:v1alpha1 alerting:v2beta1"
+MANIFESTS="application/v1alpha1 cluster/v1alpha1 iam/v1alpha2 network/v1alpha1 quota/v1alpha2 storage/v1alpha1 tenant/... gateway/... alerting/..."
 
 # App Version
 APP_VERSION = v3.2.0
@@ -56,7 +56,7 @@ binary: | ks-apiserver ks-controller-manager; $(info $(M)...Build all of binary.
 
 # Build ks-apiserver binary
 ks-apiserver: ; $(info $(M)...Begin to build ks-apiserver binary.)  @ ## Build ks-apiserver.
-	 hack/gobuild.sh cmd/ks-apiserver;
+	hack/gobuild.sh cmd/ks-apiserver;
 
 # Build ks-controller-manager binary
 ks-controller-manager: ; $(info $(M)...Begin to build ks-controller-manager binary.)  @ ## Build ks-controller-manager.
@@ -75,7 +75,7 @@ kind-e2e: ;$(info $(M)...Run e2e test.) @ ## Run e2e test in kind.
 
 # Run go fmt against code
 fmt: ;$(info $(M)...Begin to run go fmt against code.)  @ ## Run go fmt against code.
-	gofmt -w ./pkg ./cmd ./tools ./api
+	gofmt -w ./pkg ./cmd ./tools ./api ./staging ./kube
 
 # Format all import, `goimports` is required.
 goimports: ;$(info $(M)...Begin to Format all import.)  @ ## Format all import, `goimports` is required.
@@ -96,8 +96,9 @@ deploy: manifests ;$(info $(M)...Begin to deploy.)  @ ## Deploy.
 mockgen: ;$(info $(M)...Begin to mockgen.)  @ ## Mockgen.
 	mockgen -package=openpitrix -source=pkg/simple/client/openpitrix/openpitrix.go -destination=pkg/simple/client/openpitrix/mock.go
 
+# Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 deepcopy: ;$(info $(M)...Begin to deepcopy.)  @ ## Deepcopy.
-	hack/generate_group.sh "deepcopy" kubesphere.io/api kubesphere.io/api ${GV} --output-base=staging/src/  -h "hack/boilerplate.go.txt"
+	hack/generate_manifests.sh ${CRD_OPTIONS} ${MANIFESTS} "deepcopy"
 
 openapi: ;$(info $(M)...Begin to openapi.)  @ ## Openapi.
 	go run ./vendor/k8s.io/kube-openapi/cmd/openapi-gen/openapi-gen.go -O openapi_generated -i ./vendor/k8s.io/apimachinery/pkg/apis/meta/v1,./vendor/kubesphere.io/api/tenant/v1alpha1 -p kubesphere.io/api/tenant/v1alpha1 -h ./hack/boilerplate.go.txt --report-filename ./api/api-rules/violation_exceptions.list  --output-base=staging/src/
@@ -153,5 +154,13 @@ clean: ;$(info $(M)...Begin to clean.)  @ ## Clean.
 	-make -C ./pkg/version clean
 	@echo "ok"
 
+# Deprecated clientset cause we will replace code-generate with controller-runtime cache
 clientset:  ;$(info $(M)...Begin to find or download controller-gen.)  @ ## Find or download controller-gen,download controller-gen if necessary.
 	./hack/generate_client.sh ${GV}
+
+# Fix invalid file's license.
+update-licenses: ;$(info $(M)...Begin to update licenses.)
+	@hack/update-licenses.sh
+
+golint:
+	@hack/verify-golangci-lint.sh

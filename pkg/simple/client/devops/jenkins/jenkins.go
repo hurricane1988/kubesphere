@@ -20,7 +20,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
@@ -29,7 +28,7 @@ import (
 	"strconv"
 	"strings"
 
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	"kubesphere.io/kubesphere/pkg/simple/client/devops"
 )
@@ -63,7 +62,7 @@ func (j *Jenkins) Init() (*Jenkins, error) {
 	if err != nil {
 		return nil, err
 	}
-
+	rsp.Body.Close()
 	j.Version = rsp.Header.Get("X-Jenkins")
 	//if j.Raw == nil {
 	//	return nil, errors.New("Connection Failed, Please verify that the host and credentials are correct.")
@@ -214,6 +213,7 @@ func (j *Jenkins) Poll() (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	resp.Body.Close()
 	return resp.StatusCode, nil
 }
 
@@ -233,6 +233,7 @@ func (j *Jenkins) GetGlobalRole(roleName string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	response.Body.Close()
 	if response.StatusCode != http.StatusOK {
 		return "", errors.New(strconv.Itoa(response.StatusCode))
 	}
@@ -279,6 +280,7 @@ func (j *Jenkins) AssignGlobalRole(roleName string, sid string) error {
 	if err != nil {
 		return err
 	}
+	response.Body.Close()
 	if response.StatusCode != http.StatusOK {
 		return errors.New(strconv.Itoa(response.StatusCode))
 	}
@@ -301,6 +303,7 @@ func (j *Jenkins) UnAssignGlobalRole(roleName string, sid string) error {
 	if err != nil {
 		return err
 	}
+	response.Body.Close()
 	if response.StatusCode != http.StatusOK {
 		return errors.New(strconv.Itoa(response.StatusCode))
 	}
@@ -321,6 +324,7 @@ func (j *Jenkins) GetProjectRole(roleName string) (*ProjectRole, error) {
 	if err != nil {
 		return nil, err
 	}
+	response.Body.Close()
 	if response.StatusCode != http.StatusOK {
 		return nil, errors.New(strconv.Itoa(response.StatusCode))
 	}
@@ -353,6 +357,7 @@ func (j *Jenkins) AssignProjectRole(roleName string, sid string) error {
 	if err != nil {
 		return err
 	}
+	response.Body.Close()
 	if response.StatusCode != http.StatusOK {
 		return errors.New(strconv.Itoa(response.StatusCode))
 	}
@@ -375,6 +380,7 @@ func (j *Jenkins) UnAssignProjectRole(roleName string, sid string) error {
 	if err != nil {
 		return err
 	}
+	response.Body.Close()
 	if response.StatusCode != http.StatusOK {
 		return errors.New(strconv.Itoa(response.StatusCode))
 	}
@@ -402,6 +408,7 @@ func (j *Jenkins) AddGlobalRole(roleName string, ids devops.GlobalPermissionIds,
 	if err != nil {
 		return err
 	}
+	response.Body.Close()
 	if response.StatusCode != http.StatusOK {
 		return errors.New(strconv.Itoa(response.StatusCode))
 	}
@@ -419,6 +426,7 @@ func (j *Jenkins) DeleteProjectRoles(roleName ...string) error {
 	if err != nil {
 		return err
 	}
+	response.Body.Close()
 	if response.StatusCode != http.StatusOK {
 		fmt.Println(responseString)
 		return errors.New(strconv.Itoa(response.StatusCode))
@@ -448,6 +456,7 @@ func (j *Jenkins) AddProjectRole(roleName string, pattern string, ids devops.Pro
 	if err != nil {
 		return err
 	}
+	response.Body.Close()
 	if response.StatusCode != http.StatusOK {
 		return errors.New(strconv.Itoa(response.StatusCode))
 	}
@@ -464,6 +473,7 @@ func (j *Jenkins) DeleteUserInProject(username string) error {
 	if err != nil {
 		return err
 	}
+	response.Body.Close()
 	if response.StatusCode != http.StatusOK {
 		return errors.New(strconv.Itoa(response.StatusCode))
 	}
@@ -837,7 +847,8 @@ func (j *Jenkins) CheckCron(projectName string, httpParameters *devops.HttpParam
 	var path string
 
 	reader = httpParameters.Body
-	cronData, err := ioutil.ReadAll(reader)
+	//nolint:ineffassign,staticcheck
+	cronData, err := io.ReadAll(reader)
 	err = json.Unmarshal(cronData, cron)
 	if err != nil {
 		klog.Error(err)
@@ -889,6 +900,7 @@ func (j *Jenkins) ToJson(httpParameters *devops.HttpParameters) (map[string]inte
 // After creating an instance call init method.
 func CreateJenkins(client *http.Client, base string, maxConnection int, auth ...interface{}) *Jenkins {
 	j := &Jenkins{}
+	//nolint:gosimple
 	if strings.HasSuffix(base, "/") {
 		base = base[:len(base)-1]
 	}

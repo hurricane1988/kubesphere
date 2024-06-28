@@ -20,13 +20,13 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/emicklei/go-restful"
+	"github.com/emicklei/go-restful/v3"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apiserver/pkg/authentication/user"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	quotav1alpha2 "kubesphere.io/api/quota/v1alpha2"
 	tenantv1alpha2 "kubesphere.io/api/tenant/v1alpha2"
@@ -41,6 +41,8 @@ import (
 	kubesphere "kubesphere.io/kubesphere/pkg/client/clientset/versioned"
 	"kubesphere.io/kubesphere/pkg/informers"
 	"kubesphere.io/kubesphere/pkg/models/iam/am"
+	"kubesphere.io/kubesphere/pkg/models/iam/im"
+	"kubesphere.io/kubesphere/pkg/models/openpitrix"
 	resourcev1alpha3 "kubesphere.io/kubesphere/pkg/models/resources/v1alpha3/resource"
 	"kubesphere.io/kubesphere/pkg/models/tenant"
 	servererr "kubesphere.io/kubesphere/pkg/server/errors"
@@ -56,23 +58,23 @@ type tenantHandler struct {
 	meteringOptions *meteringclient.Options
 }
 
-func newTenantHandler(factory informers.InformerFactory, k8sclient kubernetes.Interface, ksclient kubesphere.Interface,
+func NewTenantHandler(factory informers.InformerFactory, k8sclient kubernetes.Interface, ksclient kubesphere.Interface,
 	evtsClient events.Client, loggingClient logging.Client, auditingclient auditing.Client,
-	am am.AccessManagementInterface, authorizer authorizer.Authorizer,
+	am am.AccessManagementInterface, im im.IdentityManagementInterface, authorizer authorizer.Authorizer,
 	monitoringclient monitoringclient.Interface, resourceGetter *resourcev1alpha3.ResourceGetter,
-	meteringOptions *meteringclient.Options) *tenantHandler {
+	meteringOptions *meteringclient.Options, opClient openpitrix.Interface) *tenantHandler {
 
 	if meteringOptions == nil || meteringOptions.RetentionDay == "" {
 		meteringOptions = &meteringclient.DefaultMeteringOption
 	}
 
 	return &tenantHandler{
-		tenant:          tenant.New(factory, k8sclient, ksclient, evtsClient, loggingClient, auditingclient, am, authorizer, monitoringclient, resourceGetter),
+		tenant:          tenant.New(factory, k8sclient, ksclient, evtsClient, loggingClient, auditingclient, am, im, authorizer, monitoringclient, resourceGetter, opClient),
 		meteringOptions: meteringOptions,
 	}
 }
 
-func (h *tenantHandler) ListWorkspaces(req *restful.Request, resp *restful.Response) {
+func (h *tenantHandler) ListWorkspaceTemplates(req *restful.Request, resp *restful.Response) {
 	user, ok := request.UserFrom(req.Request.Context())
 	queryParam := query.ParseQueryParameter(req)
 
@@ -83,7 +85,7 @@ func (h *tenantHandler) ListWorkspaces(req *restful.Request, resp *restful.Respo
 		return
 	}
 
-	result, err := h.tenant.ListWorkspaces(user, queryParam)
+	result, err := h.tenant.ListWorkspaceTemplates(user, queryParam)
 
 	if err != nil {
 		api.HandleInternalError(resp, nil, err)
@@ -200,33 +202,43 @@ func (h *tenantHandler) CreateNamespace(request *restful.Request, response *rest
 	response.WriteEntity(created)
 }
 
-func (h *tenantHandler) CreateWorkspace(request *restful.Request, response *restful.Response) {
+func (h *tenantHandler) CreateWorkspaceTemplate(req *restful.Request, resp *restful.Response) {
 	var workspace tenantv1alpha2.WorkspaceTemplate
 
-	err := request.ReadEntity(&workspace)
+	err := req.ReadEntity(&workspace)
 
 	if err != nil {
 		klog.Error(err)
-		api.HandleBadRequest(response, request, err)
+		api.HandleBadRequest(resp, req, err)
 		return
 	}
+	requestUser, ok := request.UserFrom(req.Request.Context())
+	if !ok {
+		err := fmt.Errorf("cannot obtain user info")
+		klog.Errorln(err)
+		api.HandleForbidden(resp, req, err)
+	}
 
-	created, err := h.tenant.CreateWorkspace(&workspace)
+	created, err := h.tenant.CreateWorkspaceTemplate(requestUser, &workspace)
 
 	if err != nil {
 		klog.Error(err)
 		if errors.IsNotFound(err) {
-			api.HandleNotFound(response, request, err)
+			api.HandleNotFound(resp, req, err)
 			return
 		}
-		api.HandleBadRequest(response, request, err)
+		if errors.IsForbidden(err) {
+			api.HandleForbidden(resp, req, err)
+			return
+		}
+		api.HandleBadRequest(resp, req, err)
 		return
 	}
 
-	response.WriteEntity(created)
+	resp.WriteEntity(created)
 }
 
-func (h *tenantHandler) DeleteWorkspace(request *restful.Request, response *restful.Response) {
+func (h *tenantHandler) DeleteWorkspaceTemplate(request *restful.Request, response *restful.Response) {
 	workspace := request.PathParameter("workspace")
 
 	opts := metav1.DeleteOptions{}
@@ -236,7 +248,7 @@ func (h *tenantHandler) DeleteWorkspace(request *restful.Request, response *rest
 		opts = *metav1.NewDeleteOptions(0)
 	}
 
-	err = h.tenant.DeleteWorkspace(workspace, opts)
+	err = h.tenant.DeleteWorkspaceTemplate(workspace, opts)
 
 	if err != nil {
 		klog.Error(err)
@@ -251,48 +263,59 @@ func (h *tenantHandler) DeleteWorkspace(request *restful.Request, response *rest
 	response.WriteEntity(servererr.None)
 }
 
-func (h *tenantHandler) UpdateWorkspace(request *restful.Request, response *restful.Response) {
-	workspaceName := request.PathParameter("workspace")
+func (h *tenantHandler) UpdateWorkspaceTemplate(req *restful.Request, resp *restful.Response) {
+	workspaceName := req.PathParameter("workspace")
 	var workspace tenantv1alpha2.WorkspaceTemplate
 
-	err := request.ReadEntity(&workspace)
+	err := req.ReadEntity(&workspace)
 
 	if err != nil {
 		klog.Error(err)
-		api.HandleBadRequest(response, request, err)
+		api.HandleBadRequest(resp, req, err)
 		return
 	}
 
 	if workspaceName != workspace.Name {
 		err := fmt.Errorf("the name of the object (%s) does not match the name on the URL (%s)", workspace.Name, workspaceName)
 		klog.Errorf("%+v", err)
-		api.HandleBadRequest(response, request, err)
+		api.HandleBadRequest(resp, req, err)
 		return
 	}
 
-	updated, err := h.tenant.UpdateWorkspace(&workspace)
+	requestUser, ok := request.UserFrom(req.Request.Context())
+	if !ok {
+		err := fmt.Errorf("cannot obtain user info")
+		klog.Errorln(err)
+		api.HandleForbidden(resp, req, err)
+	}
+
+	updated, err := h.tenant.UpdateWorkspaceTemplate(requestUser, &workspace)
 
 	if err != nil {
 		klog.Error(err)
 		if errors.IsNotFound(err) {
-			api.HandleNotFound(response, request, err)
+			api.HandleNotFound(resp, req, err)
 			return
 		}
 		if errors.IsBadRequest(err) {
-			api.HandleBadRequest(response, request, err)
+			api.HandleBadRequest(resp, req, err)
 			return
 		}
-		api.HandleInternalError(response, request, err)
+		if errors.IsForbidden(err) {
+			api.HandleForbidden(resp, req, err)
+			return
+		}
+		api.HandleInternalError(resp, req, err)
 		return
 	}
 
-	response.WriteEntity(updated)
+	resp.WriteEntity(updated)
 }
 
-func (h *tenantHandler) DescribeWorkspace(request *restful.Request, response *restful.Response) {
+func (h *tenantHandler) DescribeWorkspaceTemplate(request *restful.Request, response *restful.Response) {
 	workspaceName := request.PathParameter("workspace")
 
-	workspace, err := h.tenant.DescribeWorkspace(workspaceName)
+	workspace, err := h.tenant.DescribeWorkspaceTemplate(workspaceName)
 
 	if err != nil {
 		klog.Error(err)
@@ -518,33 +541,44 @@ func (h *tenantHandler) PatchNamespace(request *restful.Request, response *restf
 	response.WriteEntity(patched)
 }
 
-func (h *tenantHandler) PatchWorkspace(request *restful.Request, response *restful.Response) {
-	workspaceName := request.PathParameter("workspace")
+func (h *tenantHandler) PatchWorkspaceTemplate(req *restful.Request, resp *restful.Response) {
+	workspaceName := req.PathParameter("workspace")
 	var data json.RawMessage
-	err := request.ReadEntity(&data)
+	err := req.ReadEntity(&data)
 	if err != nil {
 		klog.Error(err)
-		api.HandleBadRequest(response, request, err)
+		api.HandleBadRequest(resp, req, err)
 		return
 	}
 
-	patched, err := h.tenant.PatchWorkspace(workspaceName, data)
+	requestUser, ok := request.UserFrom(req.Request.Context())
+	if !ok {
+		err := fmt.Errorf("cannot obtain user info")
+		klog.Errorln(err)
+		api.HandleForbidden(resp, req, err)
+	}
+
+	patched, err := h.tenant.PatchWorkspaceTemplate(requestUser, workspaceName, data)
 
 	if err != nil {
 		klog.Error(err)
 		if errors.IsNotFound(err) {
-			api.HandleNotFound(response, request, err)
+			api.HandleNotFound(resp, req, err)
 			return
 		}
 		if errors.IsBadRequest(err) {
-			api.HandleBadRequest(response, request, err)
+			api.HandleBadRequest(resp, req, err)
 			return
 		}
-		api.HandleInternalError(response, request, err)
+		if errors.IsNotFound(err) {
+			api.HandleForbidden(resp, req, err)
+			return
+		}
+		api.HandleInternalError(resp, req, err)
 		return
 	}
 
-	response.WriteEntity(patched)
+	resp.WriteEntity(patched)
 }
 
 func (h *tenantHandler) ListClusters(r *restful.Request, response *restful.Response) {
@@ -555,8 +589,8 @@ func (h *tenantHandler) ListClusters(r *restful.Request, response *restful.Respo
 		return
 	}
 
-	result, err := h.tenant.ListClusters(user)
-
+	queryParam := query.ParseQueryParameter(r)
+	result, err := h.tenant.ListClusters(user, queryParam)
 	if err != nil {
 		klog.Error(err)
 		if errors.IsNotFound(err) {

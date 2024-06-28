@@ -21,7 +21,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net"
 	"net/http"
 	"time"
@@ -32,9 +32,9 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apiserver/pkg/apis/audit"
-	"k8s.io/klog"
-
+	"k8s.io/klog/v2"
 	devopsv1alpha3 "kubesphere.io/api/devops/v1alpha3"
+	"kubesphere.io/api/iam/v1alpha2"
 
 	auditv1alpha1 "kubesphere.io/kubesphere/pkg/apiserver/auditing/v1alpha1"
 	"kubesphere.io/kubesphere/pkg/apiserver/query"
@@ -92,10 +92,7 @@ func (a *auditing) getAuditLevel() audit.Level {
 func (a *auditing) Enabled() bool {
 
 	level := a.getAuditLevel()
-	if level.Less(audit.LevelMetadata) {
-		return false
-	}
-	return true
+	return !level.Less(audit.LevelMetadata)
 }
 
 func (a *auditing) K8sAuditingEnabled() bool {
@@ -119,7 +116,6 @@ func (a *auditing) K8sAuditingEnabled() bool {
 //		info.Verb = "post"
 //		info.Name = created.Name
 //	}
-//
 func (a *auditing) LogRequestObject(req *http.Request, info *request.RequestInfo) *auditv1alpha1.Event {
 
 	// Ignore the dryRun k8s request.
@@ -192,14 +188,14 @@ func (a *auditing) LogRequestObject(req *http.Request, info *request.RequestInfo
 		}
 	}
 
-	if (e.Level.GreaterOrEqual(audit.LevelRequest) || e.Verb == "create") && req.ContentLength > 0 {
-		body, err := ioutil.ReadAll(req.Body)
+	if a.needAnalyzeRequestBody(e, req) {
+		body, err := io.ReadAll(req.Body)
 		if err != nil {
 			klog.Error(err)
 			return e
 		}
 		_ = req.Body.Close()
-		req.Body = ioutil.NopCloser(bytes.NewBuffer(body))
+		req.Body = io.NopCloser(bytes.NewBuffer(body))
 
 		if e.Level.GreaterOrEqual(audit.LevelRequest) {
 			e.RequestObject = &runtime.Unknown{Raw: body}
@@ -212,9 +208,43 @@ func (a *auditing) LogRequestObject(req *http.Request, info *request.RequestInfo
 				e.ObjectRef.Name = obj.Name
 			}
 		}
+
+		// for recording disable and enable user
+		if e.ObjectRef.Resource == "users" && e.Verb == "update" {
+			u := &v1alpha2.User{}
+			if err := json.Unmarshal(body, u); err == nil {
+				if u.Status.State == v1alpha2.UserActive {
+					e.Verb = "enable"
+				} else if u.Status.State == v1alpha2.UserDisabled {
+					e.Verb = "disable"
+				}
+			}
+		}
 	}
 
 	return e
+}
+
+func (a *auditing) needAnalyzeRequestBody(e *auditv1alpha1.Event, req *http.Request) bool {
+
+	if req.ContentLength <= 0 {
+		return false
+	}
+
+	if e.Level.GreaterOrEqual(audit.LevelRequest) {
+		return true
+	}
+
+	if e.Verb == "create" {
+		return true
+	}
+
+	// for recording disable and enable user
+	if e.ObjectRef.Resource == "users" && e.Verb == "update" {
+		return true
+	}
+
+	return false
 }
 
 func (a *auditing) LogResponseObject(e *auditv1alpha1.Event, resp *ResponseCapture) {
@@ -294,5 +324,6 @@ func (c *ResponseCapture) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 
 // CloseNotify is part of http.CloseNotifier interface
 func (c *ResponseCapture) CloseNotify() <-chan bool {
+	//nolint:staticcheck
 	return c.ResponseWriter.(http.CloseNotifier).CloseNotify()
 }

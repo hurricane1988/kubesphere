@@ -17,18 +17,17 @@ limitations under the License.
 package ldap
 
 import (
-	"io/ioutil"
 	"os"
 	"testing"
 
+	"kubesphere.io/kubesphere/pkg/server/options"
+
 	"github.com/google/go-cmp/cmp"
 	"gopkg.in/yaml.v3"
-
-	"kubesphere.io/kubesphere/pkg/apiserver/authentication/oauth"
 )
 
 func TestNewLdapProvider(t *testing.T) {
-	options := `
+	opts := `
 host: test.sn.mynetname.net:389
 managerDN: uid=root,cn=users,dc=test,dc=sn,dc=mynetname,dc=net
 managerPassword: test
@@ -37,8 +36,8 @@ userSearchBase: dc=test,dc=sn,dc=mynetname,dc=net
 loginAttribute: uid
 mailAttribute: mail
 `
-	var dynamicOptions oauth.DynamicOptions
-	err := yaml.Unmarshal([]byte(options), &dynamicOptions)
+	var dynamicOptions options.DynamicOptions
+	err := yaml.Unmarshal([]byte(opts), &dynamicOptions)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,12 +73,12 @@ func TestLdapProvider_Authenticate(t *testing.T) {
 	if configFile == "" {
 		t.Skip("Skipped")
 	}
-	options, err := ioutil.ReadFile(configFile)
+	opts, err := os.ReadFile(configFile)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var dynamicOptions oauth.DynamicOptions
-	if err = yaml.Unmarshal(options, &dynamicOptions); err != nil {
+	var dynamicOptions options.DynamicOptions
+	if err = yaml.Unmarshal(opts, &dynamicOptions); err != nil {
 		t.Fatal(err)
 	}
 	ldapProvider, err := new(ldapProviderFactory).Create(dynamicOptions)

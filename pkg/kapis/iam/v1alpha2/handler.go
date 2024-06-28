@@ -25,10 +25,10 @@ import (
 	"kubesphere.io/kubesphere/pkg/apiserver/request"
 	"kubesphere.io/kubesphere/pkg/models/auth"
 
-	"github.com/emicklei/go-restful"
+	"github.com/emicklei/go-restful/v3"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
 
@@ -380,6 +380,7 @@ func (h *iamHandler) ListWorkspaceRoles(request *restful.Request, response *rest
 	queryParam.Filters[iamv1alpha2.ScopeWorkspace] = query.Value(workspace)
 	// shared workspace role template
 	if string(queryParam.Filters[query.FieldLabel]) == fmt.Sprintf("%s=%s", iamv1alpha2.RoleTemplateLabel, "true") ||
+		strings.Contains(queryParam.LabelSelector, iamv1alpha2.RoleTemplateLabel) ||
 		queryParam.Filters[iamv1alpha2.AggregateTo] != "" {
 		delete(queryParam.Filters, iamv1alpha2.ScopeWorkspace)
 	}

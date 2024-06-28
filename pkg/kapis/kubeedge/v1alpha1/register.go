@@ -17,13 +17,14 @@ limitations under the License.
 package v1
 
 import (
-	"github.com/emicklei/go-restful"
+	"github.com/emicklei/go-restful/v3"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"kubesphere.io/kubesphere/pkg/kapis/generic"
 )
 
 // there are no versions specified cause we want to proxy all versions of requests to backend service
+// Deprecated: this api group would be removed in v4.0
 var GroupVersion = schema.GroupVersion{Group: "kubeedge.kubesphere.io", Version: ""}
 
 func AddToContainer(container *restful.Container, endpoint string) error {
@@ -31,6 +32,8 @@ func AddToContainer(container *restful.Container, endpoint string) error {
 	if err != nil {
 		return nil
 	}
+
+	proxy.SetProxyDesprecated()
 
 	return proxy.AddToContainer(container)
 }

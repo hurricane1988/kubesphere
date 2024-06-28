@@ -16,6 +16,7 @@ package openpitrix
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"sort"
@@ -27,7 +28,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"kubesphere.io/api/application/v1alpha1"
@@ -104,7 +105,7 @@ func newApplicationOperator(cached reposcache.ReposCache, informers externalvers
 }
 
 // save icon data and helm application
-func (c *applicationOperator) createApp(app *v1alpha1.HelmApplication, iconData []byte) (*v1alpha1.HelmApplication, error) {
+func (c *applicationOperator) createApp(app *v1alpha1.HelmApplication, iconData string) (*v1alpha1.HelmApplication, error) {
 	exists, err := c.getHelmAppByName(app.GetWorkspace(), app.GetTrueName())
 	if err != nil {
 		return nil, err
@@ -112,11 +113,18 @@ func (c *applicationOperator) createApp(app *v1alpha1.HelmApplication, iconData 
 	if exists != nil {
 		return nil, appItemExists
 	}
-
-	if len(iconData) != 0 {
+	if strings.HasPrefix(iconData, "http://") || strings.HasPrefix(iconData, "https://") {
+		app.Spec.Icon = iconData
+	} else if len(iconData) != 0 {
 		// save icon attachment
 		iconId := idutils.GetUuid(v1alpha1.HelmAttachmentPrefix)
-		err = c.backingStoreClient.Upload(iconId, iconId, bytes.NewBuffer(iconData), len(iconData))
+		decodeString, err := base64.StdEncoding.DecodeString(iconData)
+		if err != nil {
+			klog.Errorf("decodeString icon  failed, error: %s", err)
+			return nil, err
+		}
+
+		err = c.backingStoreClient.Upload(iconId, iconId, bytes.NewBuffer(decodeString), len(iconData))
 		if err != nil {
 			klog.Errorf("save icon attachment failed, error: %s", err)
 			return nil, err
@@ -168,6 +176,7 @@ func (c *applicationOperator) ValidatePackage(request *ValidatePackageRequest) (
 		result.VersionName = chrt.GetVersionName()
 		result.Description = chrt.GetDescription()
 		result.URL = chrt.GetUrls()
+		result.Icon = chrt.GetIcon()
 	}
 
 	return result, nil
@@ -460,6 +469,12 @@ func (c *applicationOperator) ModifyApp(appId string, request *ModifyAppRequest)
 		return err
 	}
 
+	_, err = c.appClient.UpdateStatus(context.TODO(), appCopy, metav1.UpdateOptions{})
+	if err != nil {
+		klog.Errorf("update helm application status: %s failed, error: %s", appId, err)
+		return err
+	}
+
 	_, err = c.appClient.Patch(context.TODO(), appId, patch.Type(), data, metav1.PatchOptions{})
 	if err != nil {
 		klog.Errorf("patch helm application: %s failed, error: %s", appId, err)
@@ -469,6 +484,7 @@ func (c *applicationOperator) ModifyApp(appId string, request *ModifyAppRequest)
 		}
 		return err
 	}
+
 	return nil
 }
 
@@ -537,47 +553,6 @@ func (c *applicationOperator) modifyAppAttachment(app *v1alpha1.HelmApplication,
 		}
 	}
 	return "", nil
-}
-
-// modify icon or attachment of the app
-// added: new attachments have been saved to store
-// deleted: attachments should be deleted
-func (c *applicationOperator) appAttachmentDiff(old, newApp *v1alpha1.HelmApplication) (added, deleted []string) {
-
-	added = make([]string, 0, 7)
-	deleted = make([]string, 0, 7)
-
-	if old.Spec.Icon != newApp.Spec.Icon {
-		if old.Spec.Icon != "" && !strings.HasPrefix(old.Spec.Icon, "http://") {
-			deleted = append(deleted, old.Spec.Icon)
-		}
-		added = append(added, newApp.Spec.Icon)
-	}
-
-	existsAtt := make(map[string]string, 6)
-	newAtt := make(map[string]string, 6)
-
-	for _, id := range newApp.Spec.Attachments {
-		newAtt[id] = ""
-	}
-
-	for _, id := range old.Spec.Attachments {
-		existsAtt[id] = ""
-	}
-
-	for _, id := range newApp.Spec.Attachments {
-		if _, exists := existsAtt[id]; !exists {
-			added = append(added, id)
-		}
-	}
-
-	for _, id := range old.Spec.Attachments {
-		if _, exists := newAtt[id]; !exists {
-			deleted = append(deleted, id)
-		}
-	}
-
-	return added, deleted
 }
 
 func (c *applicationOperator) DescribeApp(id string) (*App, error) {

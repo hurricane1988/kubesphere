@@ -25,17 +25,15 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
-	"io/ioutil"
+	"os"
 	"time"
 
+	"github.com/golang-jwt/jwt/v4"
 	"gopkg.in/square/go-jose.v2"
-
-	"github.com/form3tech-oss/jwt-go"
-	"k8s.io/klog"
+	"k8s.io/apiserver/pkg/authentication/user"
+	"k8s.io/klog/v2"
 
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication"
-
-	"k8s.io/apiserver/pkg/authentication/user"
 )
 
 const (
@@ -80,7 +78,7 @@ type Issuer interface {
 }
 
 type Claims struct {
-	jwt.StandardClaims
+	jwt.RegisteredClaims
 	// Private Claim Names
 	// TokenType defined the type of the token
 	TokenType Type `json:"token_type,omitempty"`
@@ -121,13 +119,13 @@ type issuer struct {
 }
 
 func (s *issuer) IssueTo(request *IssueRequest) (string, error) {
-	issueAt := time.Now().Unix()
+	issueAt := time.Now()
 	claims := Claims{
 		Username:  request.User.GetName(),
 		Extra:     request.User.GetExtra(),
 		TokenType: request.TokenType,
-		StandardClaims: jwt.StandardClaims{
-			IssuedAt: issueAt,
+		RegisteredClaims: jwt.RegisteredClaims{
+			IssuedAt: jwt.NewNumericDate(issueAt),
 			Subject:  request.User.GetName(),
 			Issuer:   s.name,
 		},
@@ -155,7 +153,7 @@ func (s *issuer) IssueTo(request *IssueRequest) (string, error) {
 		claims.Scopes = request.Scopes
 	}
 	if request.ExpiresIn > 0 {
-		claims.ExpiresAt = claims.IssuedAt + int64(request.ExpiresIn.Seconds())
+		claims.ExpiresAt = jwt.NewNumericDate(issueAt.Add(request.ExpiresIn))
 	}
 
 	var token string
@@ -175,11 +173,8 @@ func (s *issuer) IssueTo(request *IssueRequest) (string, error) {
 }
 
 func (s *issuer) Verify(token string) (*VerifiedResponse, error) {
-	parser := jwt.Parser{
-		ValidMethods:         []string{jwt.SigningMethodHS256.Alg(), jwt.SigningMethodRS256.Alg()},
-		UseJSONNumber:        false,
-		SkipClaimsValidation: true,
-	}
+	parser := jwt.NewParser(jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg(), jwt.SigningMethodRS256.Alg()}),
+		jwt.WithoutClaimsValidation())
 
 	var claims Claims
 	_, err := parser.ParseWithClaims(token, &claims, s.keyFunc)
@@ -188,17 +183,17 @@ func (s *issuer) Verify(token string) (*VerifiedResponse, error) {
 		return nil, err
 	}
 
-	now := time.Now().Unix()
-	if claims.VerifyExpiresAt(now, false) == false {
-		delta := time.Unix(now, 0).Sub(time.Unix(claims.ExpiresAt, 0))
+	now := time.Now()
+	if !claims.VerifyExpiresAt(now, false) {
+		delta := now.Sub(claims.ExpiresAt.Time)
 		err = fmt.Errorf("jwt: token is expired by %v", delta)
 		klog.V(4).Info(err)
 		return nil, err
 	}
 
 	// allowing a clock skew when checking the time-based values.
-	skewedTime := now + int64(s.maximumClockSkew.Seconds())
-	if claims.VerifyIssuedAt(skewedTime, false) == false {
+	skewedTime := now.Add(s.maximumClockSkew)
+	if !claims.VerifyIssuedAt(skewedTime, false) {
 		err = fmt.Errorf("jwt: token used before issued, iat:%v, now:%v", claims.IssuedAt, now)
 		klog.Warning(err)
 		return nil, err
@@ -264,7 +259,7 @@ func loadSignKey(options *authentication.Options) (*rsa.PrivateKey, string, erro
 	var err error
 
 	if options.OAuthOptions.SignKey != "" {
-		signKeyData, err = ioutil.ReadFile(options.OAuthOptions.SignKey)
+		signKeyData, err = os.ReadFile(options.OAuthOptions.SignKey)
 		if err != nil {
 			klog.Errorf("issuer: failed to read private key file %s: %v", options.OAuthOptions.SignKey, err)
 			return nil, "", err

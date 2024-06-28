@@ -20,7 +20,7 @@ import (
 	"testing"
 
 	"k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/klog/klogr"
+	"k8s.io/klog/v2"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	helmappscheme "kubesphere.io/api/application/v1alpha1"
@@ -30,18 +30,15 @@ import (
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	"sigs.k8s.io/controller-runtime/pkg/envtest/printer"
 )
 
 func TestWorkspaceTemplateController(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecsWithDefaultAndCustomReporters(t,
-		"WorkspaceTemplate Controller Test Suite",
-		[]Reporter{printer.NewlineReporter{}})
+	RunSpecs(t, "WorkspaceTemplate Controller Test Suite")
 }
 
 var _ = BeforeSuite(func(done Done) {
-	logf.SetLogger(klogr.New())
+	logf.SetLogger(klog.NewKlogr())
 
 	err := helmappscheme.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())

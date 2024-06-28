@@ -24,7 +24,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	fakek8s "k8s.io/client-go/kubernetes/fake"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	fakeks "kubesphere.io/kubesphere/pkg/client/clientset/versioned/fake"
 	"kubesphere.io/kubesphere/pkg/informers"
@@ -46,7 +46,7 @@ func TestOpenPitrixCategory(t *testing.T) {
 	}
 
 	// add category to indexer
-	ctgs, err := ksClient.ApplicationV1alpha1().HelmCategories().List(context.TODO(), metav1.ListOptions{})
+	ctgs, _ := ksClient.ApplicationV1alpha1().HelmCategories().List(context.TODO(), metav1.ListOptions{})
 	for _, ctg := range ctgs.Items {
 		err := fakeInformerFactory.KubeSphereSharedInformerFactory().Application().V1alpha1().HelmCategories().
 			Informer().GetIndexer().Add(&ctg)

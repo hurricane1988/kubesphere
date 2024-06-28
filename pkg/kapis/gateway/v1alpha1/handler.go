@@ -17,11 +17,10 @@ limitations under the License.
 package v1alpha1
 
 import (
-	"context"
 	"fmt"
 	"time"
 
-	"github.com/emicklei/go-restful"
+	"github.com/emicklei/go-restful/v3"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apiserver/pkg/util/flushwriter"
 	"k8s.io/client-go/kubernetes"
@@ -51,7 +50,7 @@ type handler struct {
 	lo      logging.LoggingOperator
 }
 
-//newHandler create an instance of the handler
+// newHandler create an instance of the handler
 func newHandler(options *gateway.Options, cache cache.Cache, client client.Client, factory informers.InformerFactory, k8sClient kubernetes.Interface, loggingClient loggingclient.Client) *handler {
 	conversionsv1.RegisterConversions(scheme.Scheme)
 	// Do not register Gateway scheme globally. Which will cause conflict in ks-controller-manager.
@@ -177,7 +176,7 @@ func (h *handler) PodLog(request *restful.Request, response *restful.Response) {
 	}
 
 	fw := flushwriter.Wrap(response.ResponseWriter)
-	err := h.gw.GetPodLogs(context.TODO(), podNamespace, podID, logOptions, fw)
+	err := h.gw.GetPodLogs(request.Request.Context(), podNamespace, podID, logOptions, fw)
 	if err != nil {
 		api.HandleError(response, request, err)
 		return
@@ -196,7 +195,7 @@ func (h *handler) PodLogSearch(request *restful.Request, response *restful.Respo
 		api.HandleError(response, request, err)
 		return
 	}
-	// ES log will be filted by pods and namespace by default.
+	// ES log will be filtered by pods and namespace by default.
 	pods, err := h.gw.GetPods(ns, &query.Query{})
 	if err != nil {
 		api.HandleError(response, request, err)

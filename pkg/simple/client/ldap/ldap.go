@@ -20,12 +20,11 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/go-ldap/ldap"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
 
@@ -35,19 +34,15 @@ import (
 )
 
 const (
-	ldapAttributeObjectClass       = "objectClass"
-	ldapAttributeCommonName        = "cn"
-	ldapAttributeSerialNumber      = "sn"
-	ldapAttributeGlobalIDNumber    = "gidNumber"
-	ldapAttributeHomeDirectory     = "homeDirectory"
-	ldapAttributeUserID            = "uid"
-	ldapAttributeUserIDNumber      = "uidNumber"
-	ldapAttributeMail              = "mail"
-	ldapAttributeUserPassword      = "userPassword"
-	ldapAttributePreferredLanguage = "preferredLanguage"
-	ldapAttributeDescription       = "description"
-	ldapAttributeCreateTimestamp   = "createTimestamp"
-	ldapAttributeOrganizationUnit  = "ou"
+	ldapAttributeObjectClass      = "objectClass"
+	ldapAttributeCommonName       = "cn"
+	ldapAttributeSerialNumber     = "sn"
+	ldapAttributeUserID           = "uid"
+	ldapAttributeMail             = "mail"
+	ldapAttributeUserPassword     = "userPassword"
+	ldapAttributeDescription      = "description"
+	ldapAttributeCreateTimestamp  = "createTimestamp"
+	ldapAttributeOrganizationUnit = "ou"
 
 	// ldap create timestamp attribute layout
 	ldapAttributeCreateTimestampLayout = "20060102150405Z"
@@ -63,8 +58,6 @@ type ldapInterfaceImpl struct {
 	groupSearchBase string
 	managerDN       string
 	managerPassword string
-
-	once sync.Once
 }
 
 var _ Interface = &ldapInterfaceImpl{}
@@ -95,7 +88,6 @@ func NewLdapClient(options *Options, stopCh <-chan struct{}) (Interface, error) 
 		groupSearchBase: options.GroupSearchBase,
 		managerDN:       options.ManagerDN,
 		managerPassword: options.ManagerPassword,
-		once:            sync.Once{},
 	}
 
 	go func() {
@@ -103,9 +95,7 @@ func NewLdapClient(options *Options, stopCh <-chan struct{}) (Interface, error) 
 		client.close()
 	}()
 
-	client.once.Do(func() {
-		_ = client.createSearchBase()
-	})
+	_ = client.createSearchBase()
 
 	return client, nil
 }

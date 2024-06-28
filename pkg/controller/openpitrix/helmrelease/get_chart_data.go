@@ -22,7 +22,7 @@ import (
 	"strings"
 
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	"kubesphere.io/api/application/v1alpha1"
 
@@ -39,7 +39,7 @@ func (r *ReconcileHelmRelease) GetChartData(rls *v1alpha1.HelmRelease) (chartNam
 			return chartName, chartData, ErrGetRepoFailed
 		}
 
-		index, err := helmrepoindex.ByteArrayToSavedIndex([]byte(repo.Status.Data))
+		index, _ := helmrepoindex.ByteArrayToSavedIndex([]byte(repo.Status.Data))
 
 		if version := index.GetApplicationVersion(rls.Spec.ApplicationId, rls.Spec.ApplicationVersionId); version != nil {
 			url := version.Spec.URLs[0]

@@ -28,6 +28,7 @@ import (
 	_ "kubesphere.io/kubesphere/pkg/apiserver/authentication/identityprovider/aliyunidaas"
 	_ "kubesphere.io/kubesphere/pkg/apiserver/authentication/identityprovider/cas"
 	_ "kubesphere.io/kubesphere/pkg/apiserver/authentication/identityprovider/github"
+	_ "kubesphere.io/kubesphere/pkg/apiserver/authentication/identityprovider/gitlab"
 	_ "kubesphere.io/kubesphere/pkg/apiserver/authentication/identityprovider/ldap"
 	_ "kubesphere.io/kubesphere/pkg/apiserver/authentication/identityprovider/oidc"
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication/oauth"
@@ -51,7 +52,7 @@ type Options struct {
 	LoginHistoryRetentionPeriod time.Duration `json:"loginHistoryRetentionPeriod" yaml:"loginHistoryRetentionPeriod"`
 	// retention login history, records beyond this amount will be deleted
 	// LoginHistoryMaximumEntries restricts for all kubesphere accounts and must be greater than AuthenticateRateLimiterMaxTries
-	LoginHistoryMaximumEntries int `json:"loginHistoryMaximumEntries" yaml:"loginHistoryMaximumEntries"`
+	LoginHistoryMaximumEntries int `json:"loginHistoryMaximumEntries,omitempty" yaml:"loginHistoryMaximumEntries,omitempty"`
 	// allow multiple users login from different location at the same time
 	MultipleLogin bool `json:"multipleLogin" yaml:"multipleLogin"`
 	// secret to sign jwt token

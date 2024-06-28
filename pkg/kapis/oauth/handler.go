@@ -23,32 +23,26 @@ import (
 	"strings"
 	"time"
 
+	"github.com/emicklei/go-restful/v3"
+	"github.com/golang-jwt/jwt/v4"
 	"gopkg.in/square/go-jose.v2"
-
-	"kubesphere.io/kubesphere/pkg/utils/sliceutil"
-
-	"github.com/form3tech-oss/jwt-go"
-
-	"kubesphere.io/kubesphere/pkg/apiserver/authentication/oauth"
-	"kubesphere.io/kubesphere/pkg/apiserver/authentication/token"
-
-	"kubesphere.io/kubesphere/pkg/apiserver/authentication"
-
-	"kubesphere.io/kubesphere/pkg/server/errors"
-
-	"github.com/emicklei/go-restful"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apiserver/pkg/authentication/user"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
 
 	"kubesphere.io/kubesphere/pkg/api"
+	"kubesphere.io/kubesphere/pkg/apiserver/authentication"
+	"kubesphere.io/kubesphere/pkg/apiserver/authentication/oauth"
+	"kubesphere.io/kubesphere/pkg/apiserver/authentication/token"
 	"kubesphere.io/kubesphere/pkg/apiserver/query"
 	"kubesphere.io/kubesphere/pkg/apiserver/request"
 	"kubesphere.io/kubesphere/pkg/models/auth"
 	"kubesphere.io/kubesphere/pkg/models/iam/im"
+	"kubesphere.io/kubesphere/pkg/server/errors"
+	"kubesphere.io/kubesphere/pkg/utils/sliceutil"
 )
 
 const (
@@ -298,7 +292,7 @@ func (h *handler) authorize(req *restful.Request, response *restful.Response) {
 		code, err := h.tokenOperator.IssueTo(&token.IssueRequest{
 			User: authenticated,
 			Claims: token.Claims{
-				StandardClaims: jwt.StandardClaims{
+				RegisteredClaims: jwt.RegisteredClaims{
 					Audience: []string{clientID},
 				},
 				TokenType: token.AuthorizationCode,
@@ -361,16 +355,6 @@ func (h *handler) oauthCallback(req *restful.Request, response *restful.Response
 	response.WriteEntity(result)
 }
 
-func (h *handler) login(request *restful.Request, response *restful.Response) {
-	var loginRequest LoginRequest
-	err := request.ReadEntity(&loginRequest)
-	if err != nil {
-		api.HandleBadRequest(response, request, err)
-		return
-	}
-	h.passwordGrant(loginRequest.Username, loginRequest.Password, request, response)
-}
-
 // To obtain an Access Token, an ID Token, and optionally a Refresh Token,
 // the RP (Client) sends a Token Request to the Token Endpoint to obtain a Token Response,
 // as described in Section 3.2 of OAuth 2.0 [RFC6749], when using the Authorization Code Flow.
@@ -412,7 +396,7 @@ func (h *handler) token(req *restful.Request, response *restful.Response) {
 	case grantTypePassword:
 		username, _ := req.BodyParameter("username")
 		password, _ := req.BodyParameter("password")
-		h.passwordGrant(username, password, req, response)
+		h.passwordGrant("", username, password, req, response)
 		return
 	case grantTypeRefreshToken:
 		h.refreshTokenGrant(req, response)
@@ -433,10 +417,13 @@ func (h *handler) token(req *restful.Request, response *restful.Response) {
 // such as the device operating system or a highly privileged application.
 // The authorization server should take special care when enabling this
 // grant type and only allow it when other flows are not viable.
-func (h *handler) passwordGrant(username string, password string, req *restful.Request, response *restful.Response) {
-	authenticated, provider, err := h.passwordAuthenticator.Authenticate(req.Request.Context(), username, password)
+func (h *handler) passwordGrant(provider, username string, password string, req *restful.Request, response *restful.Response) {
+	authenticated, provider, err := h.passwordAuthenticator.Authenticate(req.Request.Context(), provider, username, password)
 	if err != nil {
 		switch err {
+		case auth.AccountIsNotActiveError:
+			response.WriteHeaderAndEntity(http.StatusBadRequest, oauth.NewInvalidGrant(err))
+			return
 		case auth.IncorrectPasswordError:
 			requestInfo, _ := request.RequestInfoFrom(req.Request.Context())
 			if err := h.loginRecorder.RecordLogin(username, iamv1alpha2.Token, provider, requestInfo.SourceIP, requestInfo.UserAgent, err); err != nil {
@@ -468,6 +455,11 @@ func (h *handler) passwordGrant(username string, password string, req *restful.R
 }
 
 func (h *handler) issueTokenTo(user user.Info) (*oauth.Token, error) {
+	if !h.options.MultipleLogin {
+		if err := h.tokenOperator.RevokeAllUserTokens(user.GetName()); err != nil {
+			return nil, err
+		}
+	}
 	accessToken, err := h.tokenOperator.IssueTo(&token.IssueRequest{
 		User:      user,
 		Claims:    token.Claims{TokenType: token.AccessToken},
@@ -484,7 +476,6 @@ func (h *handler) issueTokenTo(user user.Info) (*oauth.Token, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	result := oauth.Token{
 		AccessToken: accessToken,
 		// The OAuth 2.0 token_type response parameter value MUST be Bearer,
@@ -599,7 +590,7 @@ func (h *handler) codeGrant(req *restful.Request, response *restful.Response) {
 	idTokenRequest := &token.IssueRequest{
 		User: authorizeContext.User,
 		Claims: token.Claims{
-			StandardClaims: jwt.StandardClaims{
+			RegisteredClaims: jwt.RegisteredClaims{
 				Audience: authorizeContext.Audience,
 			},
 			Nonce:     authorizeContext.Nonce,
@@ -652,7 +643,9 @@ func (h *handler) logout(req *restful.Request, resp *restful.Response) {
 
 	state := req.QueryParameter("state")
 	if state != "" {
-		redirectURL.Query().Add("state", state)
+		qry := redirectURL.Query()
+		qry.Add("state", state)
+		redirectURL.RawQuery = qry.Encode()
 	}
 
 	resp.Header().Set("Content-Type", "text/plain")
@@ -673,7 +666,7 @@ func (h *handler) userinfo(req *restful.Request, response *restful.Response) {
 	}
 
 	result := token.Claims{
-		StandardClaims: jwt.StandardClaims{
+		RegisteredClaims: jwt.RegisteredClaims{
 			Subject: detail.Name,
 		},
 		Name:              detail.Name,
@@ -682,4 +675,12 @@ func (h *handler) userinfo(req *restful.Request, response *restful.Response) {
 		PreferredUsername: detail.Name,
 	}
 	response.WriteEntity(result)
+}
+
+func (h *handler) loginByIdentityProvider(req *restful.Request, response *restful.Response) {
+	username, _ := req.BodyParameter("username")
+	password, _ := req.BodyParameter("password")
+	idp := req.PathParameter("identityprovider")
+
+	h.passwordGrant(idp, username, password, req, response)
 }

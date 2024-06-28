@@ -15,14 +15,14 @@
 package calicov3
 
 import (
-	cnet "github.com/projectcalico/libcalico-go/lib/net"
+	cnet "github.com/projectcalico/calico/libcalico-go/lib/net"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	v3 "github.com/projectcalico/libcalico-go/lib/apis/v3"
+	v3 "github.com/projectcalico/api/pkg/apis/projectcalico/v3"
 )
 
 // +genclient
-// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:object:root=true
 // +genclient:nonNamespaced
 // +k8s:openapi-gen=true
 // +kubebuilder:resource:scope=Cluster
@@ -32,7 +32,7 @@ type IPPool struct {
 	Spec              v3.IPPoolSpec `json:"spec,omitempty"`
 }
 
-// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:object:root=true
 
 // IPPoolList contains a list of IPPool resources.
 type IPPoolList struct {

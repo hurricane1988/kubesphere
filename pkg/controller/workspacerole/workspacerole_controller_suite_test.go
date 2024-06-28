@@ -24,7 +24,7 @@ import (
 
 	"github.com/onsi/gomega/gexec"
 	"k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/klog/klogr"
+	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -34,7 +34,6 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
-	"sigs.k8s.io/controller-runtime/pkg/envtest/printer"
 )
 
 // These tests use Ginkgo (BDD-style Go testing framework). Refer to
@@ -46,13 +45,11 @@ var testEnv *envtest.Environment
 
 func TestWorkspaceRoleController(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecsWithDefaultAndCustomReporters(t,
-		"WorkspaceRole Controller Test Suite",
-		[]Reporter{printer.NewlineReporter{}})
+	RunSpecs(t, "WorkspaceRole Controller Test Suite")
 }
 
 var _ = BeforeSuite(func(done Done) {
-	logf.SetLogger(klogr.New())
+	logf.SetLogger(klog.NewKlogr())
 
 	By("bootstrapping test environment")
 	t := true
@@ -62,7 +59,7 @@ var _ = BeforeSuite(func(done Done) {
 		}
 	} else {
 		testEnv = &envtest.Environment{
-			CRDDirectoryPaths:        []string{filepath.Join("..", "..", "..", "config", "crds")},
+			CRDDirectoryPaths:        []string{filepath.Join("..", "..", "..", "config", "ks-core", "crds")},
 			AttachControlPlaneOutput: false,
 		}
 	}

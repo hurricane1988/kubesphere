@@ -26,7 +26,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/diff"
-	"k8s.io/client-go/informers"
 	kubeinformers "k8s.io/client-go/informers"
 	k8sfake "k8s.io/client-go/kubernetes/fake"
 	core "k8s.io/client-go/testing"
@@ -38,11 +37,13 @@ var (
 )
 
 type fixture struct {
-	t             *testing.T
-	kubeclient    *k8sfake.Clientset
+	t          *testing.T
+	kubeclient *k8sfake.Clientset
+	//nolint:unused
 	jobController *JobController
 	jobLister     []*batchv1.Job
 
+	//nolint:unused
 	kubeactions []core.Action
 	actions     []core.Action
 
@@ -132,7 +133,7 @@ func checkAction(expected, actual core.Action, t *testing.T) {
 	}
 }
 
-func (f *fixture) newController() (*JobController, informers.SharedInformerFactory) {
+func (f *fixture) newController() (*JobController, kubeinformers.SharedInformerFactory) {
 	f.kubeclient = k8sfake.NewSimpleClientset(f.kubeobjects...)
 
 	k8sI := kubeinformers.NewSharedInformerFactory(f.kubeclient, noResyncPeriodFunc())

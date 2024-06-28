@@ -53,6 +53,7 @@ type DashboardEntity struct {
 	GrafanaDashboardUrl     string `json:"grafanaDashboardUrl,omitempty"`
 	GrafanaDashboardContent string `json:"grafanaDashboardContent,omitempty"`
 	Description             string `json:"description,omitempty"`
+	Namespace               string `json:"namespace,omitempty"`
 }
 
 // The first element is the timestamp, the second is the metric value.
@@ -91,7 +92,6 @@ func (mv *MetricValue) TransferToExportedMetricValue() {
 	}
 	mv.Series = nil
 
-	return
 }
 
 func (p Point) Timestamp() float64 {

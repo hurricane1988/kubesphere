@@ -24,7 +24,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"strings"
 	"time"
 
@@ -99,6 +98,9 @@ func MergeRepoIndex(repo *v1alpha1.HelmRepo, index *helmrepo.IndexFile, existsSa
 
 	allAppNames := make(map[string]struct{}, len(index.Entries))
 	for name, versions := range index.Entries {
+		if len(versions) == 0 {
+			continue
+		}
 		// add new applications
 		if application, exists := saved.Applications[name]; !exists {
 			application = &Application{
@@ -272,7 +274,7 @@ func ByteArrayToSavedIndex(data []byte) (*SavedIndex, error) {
 		return nil, err
 	}
 	r.Close()
-	b, err := ioutil.ReadAll(r)
+	b, err := io.ReadAll(r)
 
 	if err != nil && err != io.EOF {
 		return nil, err

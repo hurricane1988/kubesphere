@@ -19,9 +19,9 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/emicklei/go-restful"
+	"github.com/emicklei/go-restful/v3"
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	devopsv1alpha3 "kubesphere.io/api/devops/v1alpha3"
 
@@ -177,6 +177,7 @@ func (j *Jenkins) GetCredentialInProject(projectId, id string) (*devops.Credenti
 	if err != nil {
 		return nil, err
 	}
+	response.Body.Close()
 	if response.StatusCode != http.StatusOK {
 		return nil, errors.New(strconv.Itoa(response.StatusCode))
 	}
@@ -197,6 +198,7 @@ func (j *Jenkins) GetCredentialsInProject(projectId string) ([]*devops.Credentia
 	if err != nil {
 		return nil, err
 	}
+	response.Body.Close()
 	if response.StatusCode != http.StatusOK {
 		return nil, errors.New(strconv.Itoa(response.StatusCode))
 	}
@@ -236,7 +238,7 @@ func (j *Jenkins) CreateCredentialInProject(projectId string, credential *v1.Sec
 	if err != nil {
 		return "", err
 	}
-
+	response.Body.Close()
 	if response.StatusCode != http.StatusOK {
 		return "", errors.New(strconv.Itoa(response.StatusCode))
 	}
@@ -272,6 +274,7 @@ func (j *Jenkins) UpdateCredentialInProject(projectId string, credential *v1.Sec
 	if err != nil {
 		return "", err
 	}
+	response.Body.Close()
 	if response.StatusCode != http.StatusOK {
 		return "", errors.New(strconv.Itoa(response.StatusCode))
 	}
@@ -285,6 +288,7 @@ func (j *Jenkins) DeleteCredentialInProject(projectId, id string) (string, error
 	if err != nil {
 		return "", err
 	}
+	response.Body.Close()
 	if response.StatusCode != http.StatusOK {
 		return "", errors.New(strconv.Itoa(response.StatusCode))
 	}

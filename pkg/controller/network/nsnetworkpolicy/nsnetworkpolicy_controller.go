@@ -36,7 +36,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	"kubesphere.io/api/network/v1alpha1"
 	workspacev1alpha1 "kubesphere.io/api/tenant/v1alpha1"
@@ -678,15 +678,11 @@ func NewNSNetworkPolicyController(
 	})
 
 	nsnpInformer.Informer().AddEventHandlerWithResyncPeriod(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
-			controller.nsnpEnqueue(obj)
-		},
+		AddFunc: controller.nsnpEnqueue,
 		UpdateFunc: func(oldObj interface{}, newObj interface{}) {
 			controller.nsnpEnqueue(newObj)
 		},
-		DeleteFunc: func(obj interface{}) {
-			controller.nsnpEnqueue(obj)
-		},
+		DeleteFunc: controller.nsnpEnqueue,
 	}, defaultSleepDuration)
 
 	return controller

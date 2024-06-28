@@ -19,12 +19,13 @@ package v1alpha3
 import (
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 
-	"github.com/emicklei/go-restful"
+	"github.com/emicklei/go-restful/v3"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	"kubesphere.io/kubesphere/pkg/api"
 	"kubesphere.io/kubesphere/pkg/apiserver/query"
@@ -65,7 +66,7 @@ func (h *Handler) handleGetResources(request *restful.Request, response *restful
 	}
 
 	if err != resourcev1alpha3.ErrResourceNotSupported {
-		klog.Error(err, resourceType)
+		klog.Errorf("%s, resource type: %s", err, resourceType)
 		api.HandleInternalError(response, nil, err)
 		return
 	}
@@ -99,7 +100,7 @@ func (h *Handler) handleListResources(request *restful.Request, response *restfu
 	}
 
 	if err != resourcev1alpha3.ErrResourceNotSupported {
-		klog.Error(err, resourceType)
+		klog.Errorf("%s, resource type: %s", err, resourceType)
 		api.HandleInternalError(response, request, err)
 		return
 	}
@@ -127,16 +128,12 @@ func (h *Handler) fallback(resourceType string, namespace string, q *query.Query
 		switch field {
 		case query.FieldName:
 			conditions.Fuzzy[v1alpha2.Name] = string(value)
-			break
 		case query.FieldNames:
 			conditions.Match[v1alpha2.Name] = string(value)
-			break
 		case query.FieldCreationTimeStamp:
 			conditions.Match[v1alpha2.CreateTime] = string(value)
-			break
 		case query.FieldLastUpdateTimestamp:
 			conditions.Match[v1alpha2.UpdateTime] = string(value)
-			break
 		case query.FieldLabel:
 			values := strings.SplitN(string(value), ":", 2)
 			if len(values) == 2 {
@@ -144,7 +141,6 @@ func (h *Handler) fallback(resourceType string, namespace string, q *query.Query
 			} else {
 				conditions.Match[v1alpha2.Label] = values[0]
 			}
-			break
 		case query.FieldAnnotation:
 			values := strings.SplitN(string(value), ":", 2)
 			if len(values) == 2 {
@@ -152,16 +148,12 @@ func (h *Handler) fallback(resourceType string, namespace string, q *query.Query
 			} else {
 				conditions.Match[v1alpha2.Annotation] = values[0]
 			}
-			break
 		case query.FieldStatus:
 			conditions.Match[v1alpha2.Status] = string(value)
-			break
 		case query.FieldOwnerReference:
 			conditions.Match[v1alpha2.Owner] = string(value)
-			break
 		default:
 			conditions.Match[string(field)] = string(value)
-			break
 		}
 	}
 
@@ -260,6 +252,9 @@ func (h *Handler) handleGetRepositoryTags(request *restful.Request, response *re
 	secretName := request.QueryParameter("secret")
 	namespace := request.PathParameter("namespace")
 	repository := request.QueryParameter("repository")
+
+	q := query.ParseQueryParameter(request)
+
 	var secret *v1.Secret
 
 	if len(repository) == 0 {
@@ -280,6 +275,12 @@ func (h *Handler) handleGetRepositoryTags(request *restful.Request, response *re
 		canonicalizeRegistryError(request, response, err)
 		return
 	}
+
+	if !q.Ascending {
+		sort.Sort(sort.Reverse(sort.StringSlice(tags.Tags)))
+	}
+	startIndex, endIndex := q.Pagination.GetValidPagination(len(tags.Tags))
+	tags.Tags = tags.Tags[startIndex:endIndex]
 
 	response.WriteHeaderAndJson(http.StatusOK, tags, restful.MIME_JSON)
 }

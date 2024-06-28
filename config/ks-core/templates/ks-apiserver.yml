@@ -41,8 +41,6 @@ spec:
         resources:
           {{- toYaml .Values.apiserver.resources | nindent 12 }}
         volumeMounts:
-        - mountPath: /etc/kubesphere/ingress-controller
-          name: ks-router-config
         - mountPath: /etc/kubesphere/
           name: kubesphere-config
         - mountPath: /etc/localtime
@@ -79,10 +77,6 @@ spec:
       volumes:
       - configMap:
           defaultMode: 420
-          name: ks-router-config
-        name: ks-router-config
-      - configMap:
-          defaultMode: 420
           name: kubesphere-config
         name: kubesphere-config
       - hostPath:
@@ -109,8 +103,15 @@ spec:
   - port: 80
     protocol: TCP
     targetPort: 9090
+    {{- with .Values.apiserver.nodePort }}
+    nodePort:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
   selector:
     app: ks-apiserver
     tier: backend
-    # version: {{ .Chart.AppVersion }}
+{{- if .Values.apiserver.nodePort }}
+  type: NodePort
+{{- else}}
   type: ClusterIP
+{{- end}}

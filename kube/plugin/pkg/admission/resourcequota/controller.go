@@ -23,7 +23,7 @@ import (
 	"sync"
 	"time"
 
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -36,7 +36,7 @@ import (
 	"k8s.io/apiserver/pkg/admission"
 	"k8s.io/client-go/util/workqueue"
 
-	quota "kubesphere.io/kubesphere/kube/pkg/quota/v1"
+	"kubesphere.io/kubesphere/kube/pkg/quota/v1"
 	"kubesphere.io/kubesphere/kube/pkg/quota/v1/generic"
 	resourcequotaapi "kubesphere.io/kubesphere/kube/plugin/pkg/admission/resourcequota/apis/resourcequota"
 )
@@ -66,7 +66,7 @@ type quotaEvaluator struct {
 	workLock   sync.Mutex
 	work       map[string][]*admissionWaiter
 	dirtyWork  map[string][]*admissionWaiter
-	inProgress sets.String
+	inProgress sets.Set[string]
 
 	// controls the run method so that we can cleanly conform to the Evaluator interface
 	workers int
@@ -126,7 +126,7 @@ func NewQuotaEvaluator(quotaAccessor QuotaAccessor, ignoredResources map[schema.
 		queue:      workqueue.NewNamed("admission_quota_controller"),
 		work:       map[string][]*admissionWaiter{},
 		dirtyWork:  map[string][]*admissionWaiter{},
-		inProgress: sets.String{},
+		inProgress: sets.New[string](),
 
 		workers: workers,
 		stopCh:  stopCh,
@@ -203,16 +203,16 @@ func (e *quotaEvaluator) checkAttributes(ns string, admissionAttributes []*admis
 
 // checkQuotas checks the admission attributes against the passed quotas.  If a quota applies, it will attempt to update it
 // AFTER it has checked all the admissionAttributes.  The method breaks down into phase like this:
-// 0. make a copy of the quotas to act as a "running" quota so we know what we need to update and can still compare against the
-//    originals
-// 1. check each admission attribute to see if it fits within *all* the quotas.  If it doesn't fit, mark the waiter as failed
-//    and the running quota don't change.  If it did fit, check to see if any quota was changed.  It there was no quota change
-//    mark the waiter as succeeded.  If some quota did change, update the running quotas
-// 2. If no running quota was changed, return now since no updates are needed.
-// 3. for each quota that has changed, attempt an update.  If all updates succeeded, update all unset waiters to success status and return.  If the some
-//    updates failed on conflict errors and we have retries left, re-get the failed quota from our cache for the latest version
-//    and recurse into this method with the subset.  It's safe for us to evaluate ONLY the subset, because the other quota
-//    documents for these waiters have already been evaluated.  Step 1, will mark all the ones that should already have succeeded.
+//  0. make a copy of the quotas to act as a "running" quota so we know what we need to update and can still compare against the
+//     originals
+//  1. check each admission attribute to see if it fits within *all* the quotas.  If it doesn't fit, mark the waiter as failed
+//     and the running quota don't change.  If it did fit, check to see if any quota was changed.  It there was no quota change
+//     mark the waiter as succeeded.  If some quota did change, update the running quotas
+//  2. If no running quota was changed, return now since no updates are needed.
+//  3. for each quota that has changed, attempt an update.  If all updates succeeded, update all unset waiters to success status and return.  If the some
+//     updates failed on conflict errors and we have retries left, re-get the failed quota from our cache for the latest version
+//     and recurse into this method with the subset.  It's safe for us to evaluate ONLY the subset, because the other quota
+//     documents for these waiters have already been evaluated.  Step 1, will mark all the ones that should already have succeeded.
 func (e *quotaEvaluator) checkQuotas(quotas []corev1.ResourceQuota, admissionAttributes []*admissionWaiter, remainingRetries int) {
 	// yet another copy to compare against originals to see if we actually have deltas
 	originalQuotas, err := copyQuotas(quotas)
@@ -381,9 +381,7 @@ func getMatchedLimitedScopes(evaluator quota.Evaluator, inputObject runtime.Obje
 			klog.Errorf("Error while matching limited Scopes: %v", err)
 			return []corev1.ScopedResourceSelectorRequirement{}, err
 		}
-		for _, scope := range matched {
-			scopes = append(scopes, scope)
-		}
+		scopes = append(scopes, matched...)
 	}
 	return scopes, nil
 }
@@ -434,7 +432,7 @@ func CheckRequest(quotas []corev1.ResourceQuota, a admission.Attributes, evaluat
 	// track the cumulative set of resources that were required across all quotas
 	// this is needed to know if we have satisfied any constraints where consumption
 	// was limited by default.
-	restrictedResourcesSet := sets.String{}
+	restrictedResourcesSet := sets.New[string]()
 	restrictedScopes := []corev1.ScopedResourceSelectorRequirement{}
 	for i := range quotas {
 		resourceQuota := quotas[i]
@@ -443,9 +441,7 @@ func CheckRequest(quotas []corev1.ResourceQuota, a admission.Attributes, evaluat
 		if err != nil {
 			return nil, fmt.Errorf("error matching scopes of quota %s, err: %v", resourceQuota.Name, err)
 		}
-		for _, scope := range localRestrictedScopes {
-			restrictedScopes = append(restrictedScopes, scope)
-		}
+		restrictedScopes = append(restrictedScopes, localRestrictedScopes...)
 
 		match, err := evaluator.Matches(&resourceQuota, inputObject)
 		if err != nil {
@@ -466,7 +462,7 @@ func CheckRequest(quotas []corev1.ResourceQuota, a admission.Attributes, evaluat
 		}
 		interestingQuotaIndexes = append(interestingQuotaIndexes, i)
 		localRestrictedResourcesSet := quota.ToSet(restrictedResources)
-		restrictedResourcesSet.Insert(localRestrictedResourcesSet.List()...)
+		restrictedResourcesSet.Insert(localRestrictedResourcesSet.UnsortedList()...)
 	}
 
 	// Usage of some resources cannot be counted in isolation. For example, when
@@ -520,7 +516,7 @@ func CheckRequest(quotas []corev1.ResourceQuota, a admission.Attributes, evaluat
 	// if not, we reject the request.
 	hasNoCoveringQuota := limitedResourceNamesSet.Difference(restrictedResourcesSet)
 	if len(hasNoCoveringQuota) > 0 {
-		return quotas, admission.NewForbidden(a, fmt.Errorf("insufficient quota to consume: %v", strings.Join(hasNoCoveringQuota.List(), ",")))
+		return quotas, admission.NewForbidden(a, fmt.Errorf("insufficient quota to consume: %v", strings.Join(hasNoCoveringQuota.UnsortedList(), ",")))
 	}
 
 	// verify that for every scope that had limited access enabled
@@ -578,9 +574,7 @@ func getScopeSelectorsFromQuota(quota corev1.ResourceQuota) []corev1.ScopedResou
 			Operator:  corev1.ScopeSelectorOpExists})
 	}
 	if quota.Spec.ScopeSelector != nil {
-		for _, scopeSelector := range quota.Spec.ScopeSelector.MatchExpressions {
-			selectors = append(selectors, scopeSelector)
-		}
+		selectors = append(selectors, quota.Spec.ScopeSelector.MatchExpressions...)
 	}
 	return selectors
 }

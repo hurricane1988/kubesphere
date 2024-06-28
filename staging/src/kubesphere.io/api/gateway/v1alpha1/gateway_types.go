@@ -24,20 +24,24 @@ import (
 
 // GatewaySpec defines the desired state of Gateway
 type GatewaySpec struct {
-	Conroller  ControllerSpec `json:"controller,omitempty"`
+	Controller ControllerSpec `json:"controller,omitempty"`
 	Service    ServiceSpec    `json:"service,omitempty"`
 	Deployment DeploymentSpec `json:"deployment,omitempty"`
 }
 
 type ControllerSpec struct {
 	// +optional
-	Replicas *int32 `json:"replicas,omitempty" protobuf:"varint,1,opt,name=replicas"`
+	Replicas *int32 `json:"replicas,omitempty"`
 	// +optional
 	Annotations map[string]string `json:"annotations,omitempty"`
 	// +optional
 	Config map[string]string `json:"config,omitempty"`
 	// +optional
 	Scope Scope `json:"scope,omitempty"`
+	// +optional
+	TCP map[string]string `json:"tcp,omitempty"`
+	// +optional
+	UDP map[string]string `json:"udp,omitempty"`
 }
 
 type ServiceSpec struct {
@@ -49,9 +53,11 @@ type ServiceSpec struct {
 
 type DeploymentSpec struct {
 	// +optional
-	Replicas *int32 `json:"replicas,omitempty" protobuf:"varint,1,opt,name=replicas"`
+	Replicas *int32 `json:"replicas,omitempty"`
 	// +optional
 	Annotations map[string]string `json:"annotations,omitempty"`
+	// +optional
+	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
 }
 
 type Scope struct {

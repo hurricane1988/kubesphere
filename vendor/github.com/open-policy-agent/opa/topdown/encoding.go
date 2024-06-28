@@ -7,6 +7,7 @@ package topdown
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -19,69 +20,103 @@ import (
 	"github.com/open-policy-agent/opa/util"
 )
 
-func builtinJSONMarshal(a ast.Value) (ast.Value, error) {
+func builtinJSONMarshal(_ BuiltinContext, operands []*ast.Term, iter func(*ast.Term) error) error {
 
-	asJSON, err := ast.JSON(a)
+	asJSON, err := ast.JSON(operands[0].Value)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	bs, err := json.Marshal(asJSON)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	return ast.String(string(bs)), nil
+	return iter(ast.StringTerm(string(bs)))
 }
 
-func builtinJSONUnmarshal(a ast.Value) (ast.Value, error) {
+func builtinJSONUnmarshal(_ BuiltinContext, operands []*ast.Term, iter func(*ast.Term) error) error {
 
-	str, err := builtins.StringOperand(a, 1)
+	str, err := builtins.StringOperand(operands[0].Value, 1)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	var x interface{}
 
 	if err := util.UnmarshalJSON([]byte(str), &x); err != nil {
-		return nil, err
+		return err
 	}
-
-	return ast.InterfaceToValue(x)
+	v, err := ast.InterfaceToValue(x)
+	if err != nil {
+		return err
+	}
+	return iter(ast.NewTerm(v))
 }
 
-func builtinBase64Encode(a ast.Value) (ast.Value, error) {
-	str, err := builtins.StringOperand(a, 1)
+func builtinJSONIsValid(_ BuiltinContext, operands []*ast.Term, iter func(*ast.Term) error) error {
+
+	str, err := builtins.StringOperand(operands[0].Value, 1)
 	if err != nil {
-		return nil, err
+		return iter(ast.BooleanTerm(false))
 	}
 
-	return ast.String(base64.StdEncoding.EncodeToString([]byte(str))), nil
+	return iter(ast.BooleanTerm(json.Valid([]byte(str))))
 }
 
-func builtinBase64Decode(a ast.Value) (ast.Value, error) {
-	str, err := builtins.StringOperand(a, 1)
+func builtinBase64Encode(_ BuiltinContext, operands []*ast.Term, iter func(*ast.Term) error) error {
+	str, err := builtins.StringOperand(operands[0].Value, 1)
 	if err != nil {
-		return nil, err
+		return err
+	}
+
+	return iter(ast.StringTerm(base64.StdEncoding.EncodeToString([]byte(str))))
+}
+
+func builtinBase64Decode(_ BuiltinContext, operands []*ast.Term, iter func(*ast.Term) error) error {
+	str, err := builtins.StringOperand(operands[0].Value, 1)
+	if err != nil {
+		return err
 	}
 
 	result, err := base64.StdEncoding.DecodeString(string(str))
-	return ast.String(result), err
+	if err != nil {
+		return err
+	}
+	return iter(ast.NewTerm(ast.String(result)))
 }
 
-func builtinBase64UrlEncode(a ast.Value) (ast.Value, error) {
-	str, err := builtins.StringOperand(a, 1)
+func builtinBase64IsValid(_ BuiltinContext, operands []*ast.Term, iter func(*ast.Term) error) error {
+	str, err := builtins.StringOperand(operands[0].Value, 1)
 	if err != nil {
-		return nil, err
+		return iter(ast.BooleanTerm(false))
 	}
 
-	return ast.String(base64.URLEncoding.EncodeToString([]byte(str))), nil
+	_, err = base64.StdEncoding.DecodeString(string(str))
+	return iter(ast.BooleanTerm(err == nil))
 }
 
-func builtinBase64UrlDecode(a ast.Value) (ast.Value, error) {
-	str, err := builtins.StringOperand(a, 1)
+func builtinBase64UrlEncode(_ BuiltinContext, operands []*ast.Term, iter func(*ast.Term) error) error {
+	str, err := builtins.StringOperand(operands[0].Value, 1)
 	if err != nil {
-		return nil, err
+		return err
+	}
+
+	return iter(ast.StringTerm(base64.URLEncoding.EncodeToString([]byte(str))))
+}
+
+func builtinBase64UrlEncodeNoPad(_ BuiltinContext, operands []*ast.Term, iter func(*ast.Term) error) error {
+	str, err := builtins.StringOperand(operands[0].Value, 1)
+	if err != nil {
+		return err
+	}
+	return iter(ast.StringTerm(base64.RawURLEncoding.EncodeToString([]byte(str))))
+}
+
+func builtinBase64UrlDecode(_ BuiltinContext, operands []*ast.Term, iter func(*ast.Term) error) error {
+	str, err := builtins.StringOperand(operands[0].Value, 1)
+	if err != nil {
+		return err
 	}
 	s := string(str)
 
@@ -96,44 +131,47 @@ func builtinBase64UrlDecode(a ast.Value) (ast.Value, error) {
 		case 3:
 			s += "="
 		default:
-			return nil, fmt.Errorf("illegal base64url string: %s", s)
+			return fmt.Errorf("illegal base64url string: %s", s)
 		}
 	}
 	result, err := base64.URLEncoding.DecodeString(s)
-	return ast.String(result), err
-}
-
-func builtinURLQueryEncode(a ast.Value) (ast.Value, error) {
-	str, err := builtins.StringOperand(a, 1)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return ast.String(url.QueryEscape(string(str))), nil
+	return iter(ast.NewTerm(ast.String(result)))
 }
 
-func builtinURLQueryDecode(a ast.Value) (ast.Value, error) {
-	str, err := builtins.StringOperand(a, 1)
+func builtinURLQueryEncode(_ BuiltinContext, operands []*ast.Term, iter func(*ast.Term) error) error {
+	str, err := builtins.StringOperand(operands[0].Value, 1)
 	if err != nil {
-		return nil, err
+		return err
+	}
+	return iter(ast.StringTerm(url.QueryEscape(string(str))))
+}
+
+func builtinURLQueryDecode(_ BuiltinContext, operands []*ast.Term, iter func(*ast.Term) error) error {
+	str, err := builtins.StringOperand(operands[0].Value, 1)
+	if err != nil {
+		return err
 	}
 	s, err := url.QueryUnescape(string(str))
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return ast.String(s), nil
+	return iter(ast.StringTerm(s))
 }
 
 var encodeObjectErr = builtins.NewOperandErr(1, "values must be string, array[string], or set[string]")
 
-func builtinURLQueryEncodeObject(a ast.Value) (ast.Value, error) {
-	asJSON, err := ast.JSON(a)
+func builtinURLQueryEncodeObject(_ BuiltinContext, operands []*ast.Term, iter func(*ast.Term) error) error {
+	asJSON, err := ast.JSON(operands[0].Value)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	inputs, ok := asJSON.(map[string]interface{})
 	if !ok {
-		return nil, builtins.NewOperandTypeErr(1, a, "object")
+		return builtins.NewOperandTypeErr(1, operands[0].Value, "object")
 	}
 
 	query := url.Values{}
@@ -146,49 +184,72 @@ func builtinURLQueryEncodeObject(a ast.Value) (ast.Value, error) {
 			for _, val := range vv {
 				strVal, ok := val.(string)
 				if !ok {
-					return nil, encodeObjectErr
+					return encodeObjectErr
 				}
 				query.Add(k, strVal)
 			}
 		default:
-			return nil, encodeObjectErr
+			return encodeObjectErr
 		}
 	}
 
-	return ast.String(query.Encode()), nil
+	return iter(ast.StringTerm(query.Encode()))
 }
 
-func builtinYAMLMarshal(a ast.Value) (ast.Value, error) {
-
-	asJSON, err := ast.JSON(a)
+func builtinURLQueryDecodeObject(_ BuiltinContext, operands []*ast.Term, iter func(*ast.Term) error) error {
+	query, err := builtins.StringOperand(operands[0].Value, 1)
 	if err != nil {
-		return nil, err
+		return err
+	}
+
+	queryParams, err := url.ParseQuery(string(query))
+	if err != nil {
+		return err
+	}
+
+	queryObject := ast.NewObject()
+	for k, v := range queryParams {
+		paramsArray := make([]*ast.Term, len(v))
+		for i, param := range v {
+			paramsArray[i] = ast.StringTerm(param)
+		}
+		queryObject.Insert(ast.StringTerm(k), ast.ArrayTerm(paramsArray...))
+	}
+
+	return iter(ast.NewTerm(queryObject))
+}
+
+func builtinYAMLMarshal(_ BuiltinContext, operands []*ast.Term, iter func(*ast.Term) error) error {
+
+	asJSON, err := ast.JSON(operands[0].Value)
+	if err != nil {
+		return err
 	}
 
 	var buf bytes.Buffer
 	encoder := json.NewEncoder(&buf)
 	if err := encoder.Encode(asJSON); err != nil {
-		return nil, err
+		return err
 	}
 
 	bs, err := ghodss.JSONToYAML(buf.Bytes())
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	return ast.String(string(bs)), nil
+	return iter(ast.StringTerm(string(bs)))
 }
 
-func builtinYAMLUnmarshal(a ast.Value) (ast.Value, error) {
+func builtinYAMLUnmarshal(_ BuiltinContext, operands []*ast.Term, iter func(*ast.Term) error) error {
 
-	str, err := builtins.StringOperand(a, 1)
+	str, err := builtins.StringOperand(operands[0].Value, 1)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	bs, err := ghodss.YAMLToJSON([]byte(str))
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	buf := bytes.NewBuffer(bs)
@@ -196,22 +257,63 @@ func builtinYAMLUnmarshal(a ast.Value) (ast.Value, error) {
 	var val interface{}
 	err = decoder.Decode(&val)
 	if err != nil {
-		return nil, err
+		return err
+	}
+	v, err := ast.InterfaceToValue(val)
+	if err != nil {
+		return err
+	}
+	return iter(ast.NewTerm(v))
+}
+
+func builtinYAMLIsValid(_ BuiltinContext, operands []*ast.Term, iter func(*ast.Term) error) error {
+	str, err := builtins.StringOperand(operands[0].Value, 1)
+	if err != nil {
+		return iter(ast.BooleanTerm(false))
 	}
 
-	return ast.InterfaceToValue(val)
+	var x interface{}
+	err = ghodss.Unmarshal([]byte(str), &x)
+	return iter(ast.BooleanTerm(err == nil))
+}
+
+func builtinHexEncode(_ BuiltinContext, operands []*ast.Term, iter func(*ast.Term) error) error {
+	str, err := builtins.StringOperand(operands[0].Value, 1)
+	if err != nil {
+		return err
+	}
+	return iter(ast.StringTerm(hex.EncodeToString([]byte(str))))
+}
+
+func builtinHexDecode(_ BuiltinContext, operands []*ast.Term, iter func(*ast.Term) error) error {
+	str, err := builtins.StringOperand(operands[0].Value, 1)
+	if err != nil {
+		return err
+	}
+	val, err := hex.DecodeString(string(str))
+	if err != nil {
+		return err
+	}
+	return iter(ast.NewTerm(ast.String(val)))
 }
 
 func init() {
-	RegisterFunctionalBuiltin1(ast.JSONMarshal.Name, builtinJSONMarshal)
-	RegisterFunctionalBuiltin1(ast.JSONUnmarshal.Name, builtinJSONUnmarshal)
-	RegisterFunctionalBuiltin1(ast.Base64Encode.Name, builtinBase64Encode)
-	RegisterFunctionalBuiltin1(ast.Base64Decode.Name, builtinBase64Decode)
-	RegisterFunctionalBuiltin1(ast.Base64UrlEncode.Name, builtinBase64UrlEncode)
-	RegisterFunctionalBuiltin1(ast.Base64UrlDecode.Name, builtinBase64UrlDecode)
-	RegisterFunctionalBuiltin1(ast.URLQueryDecode.Name, builtinURLQueryDecode)
-	RegisterFunctionalBuiltin1(ast.URLQueryEncode.Name, builtinURLQueryEncode)
-	RegisterFunctionalBuiltin1(ast.URLQueryEncodeObject.Name, builtinURLQueryEncodeObject)
-	RegisterFunctionalBuiltin1(ast.YAMLMarshal.Name, builtinYAMLMarshal)
-	RegisterFunctionalBuiltin1(ast.YAMLUnmarshal.Name, builtinYAMLUnmarshal)
+	RegisterBuiltinFunc(ast.JSONMarshal.Name, builtinJSONMarshal)
+	RegisterBuiltinFunc(ast.JSONUnmarshal.Name, builtinJSONUnmarshal)
+	RegisterBuiltinFunc(ast.JSONIsValid.Name, builtinJSONIsValid)
+	RegisterBuiltinFunc(ast.Base64Encode.Name, builtinBase64Encode)
+	RegisterBuiltinFunc(ast.Base64Decode.Name, builtinBase64Decode)
+	RegisterBuiltinFunc(ast.Base64IsValid.Name, builtinBase64IsValid)
+	RegisterBuiltinFunc(ast.Base64UrlEncode.Name, builtinBase64UrlEncode)
+	RegisterBuiltinFunc(ast.Base64UrlEncodeNoPad.Name, builtinBase64UrlEncodeNoPad)
+	RegisterBuiltinFunc(ast.Base64UrlDecode.Name, builtinBase64UrlDecode)
+	RegisterBuiltinFunc(ast.URLQueryDecode.Name, builtinURLQueryDecode)
+	RegisterBuiltinFunc(ast.URLQueryEncode.Name, builtinURLQueryEncode)
+	RegisterBuiltinFunc(ast.URLQueryEncodeObject.Name, builtinURLQueryEncodeObject)
+	RegisterBuiltinFunc(ast.URLQueryDecodeObject.Name, builtinURLQueryDecodeObject)
+	RegisterBuiltinFunc(ast.YAMLMarshal.Name, builtinYAMLMarshal)
+	RegisterBuiltinFunc(ast.YAMLUnmarshal.Name, builtinYAMLUnmarshal)
+	RegisterBuiltinFunc(ast.YAMLIsValid.Name, builtinYAMLIsValid)
+	RegisterBuiltinFunc(ast.HexEncode.Name, builtinHexEncode)
+	RegisterBuiltinFunc(ast.HexDecode.Name, builtinHexDecode)
 }

@@ -20,10 +20,6 @@ package reposcache
 import (
 	"context"
 	"errors"
-	"fmt"
-	"io/ioutil"
-	"os"
-	"path"
 	"strings"
 	"sync"
 
@@ -32,7 +28,7 @@ import (
 	"github.com/Masterminds/semver/v3"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	"kubesphere.io/api/application/v1alpha1"
 
@@ -128,20 +124,6 @@ func (c *cachedRepos) deleteRepo(repo *v1alpha1.HelmRepo) {
 			delete(c.versions, ver.ApplicationVersionId)
 		}
 	}
-}
-
-func loadBuiltinChartData(name, version string) ([]byte, error) {
-	fName := path.Join(WorkDir, "chart", fmt.Sprintf("%s-%s.tgz", name, version))
-	f, err := os.Open(fName)
-	if err != nil {
-		return nil, err
-	}
-	data, err := ioutil.ReadAll(f)
-	if err != nil {
-		klog.Errorf("read index failed, error: %s", err)
-		return nil, err
-	}
-	return data, nil
 }
 
 func (c *cachedRepos) DeleteRepo(repo *v1alpha1.HelmRepo) error {
@@ -287,9 +269,15 @@ func (c *cachedRepos) addRepo(repo *v1alpha1.HelmRepo, builtin bool) error {
 				},
 				Spec: v1alpha1.HelmApplicationVersionSpec{
 					Metadata: &v1alpha1.Metadata{
-						Name:       hvw.GetName(),
-						AppVersion: hvw.GetAppVersion(),
-						Version:    hvw.GetVersion(),
+						Name:        hvw.GetName(),
+						AppVersion:  hvw.GetAppVersion(),
+						Version:     hvw.GetVersion(),
+						Description: hvw.GetDescription(),
+						Home:        hvw.GetHome(),
+						Icon:        hvw.GetIcon(),
+						Maintainers: hvw.GetRawMaintainers(),
+						Sources:     hvw.GetRawSources(),
+						Keywords:    hvw.GetRawKeywords(),
 					},
 					URLs:   chartVersion.URLs,
 					Digest: chartVersion.Digest,

@@ -29,9 +29,9 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/clock"
 	"k8s.io/client-go/tools/record"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
+	"k8s.io/utils/clock"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -292,7 +292,7 @@ func (r *Reconciler) syncQuotaForNamespaces(originalQuota *quotav1alpha2.Resourc
 	}
 
 	klog.V(6).Infof("update resource quota: %+v", quota)
-	if err := r.Status().Update(ctx, quota, &client.UpdateOptions{}); err != nil {
+	if err := r.Status().Update(ctx, quota); err != nil {
 		return err
 	}
 

@@ -17,7 +17,9 @@ limitations under the License.
 package runtime
 
 import (
-	"github.com/emicklei/go-restful"
+	"strings"
+
+	"github.com/emicklei/go-restful/v3"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
@@ -41,7 +43,8 @@ func init() {
 
 func NewWebService(gv schema.GroupVersion) *restful.WebService {
 	webservice := restful.WebService{}
-	webservice.Path(ApiRootPath + "/" + gv.String()).
+	// the GroupVersion might be empty, we need to remove the final /
+	webservice.Path(strings.TrimRight(ApiRootPath+"/"+gv.String(), "/")).
 		Produces(restful.MIME_JSON)
 
 	return &webservice
@@ -62,10 +65,8 @@ func (cb *ContainerBuilder) Register(funcs ...func(*restful.Container) error) {
 	}
 }
 
-//
 func NewContainerBuilder(funcs ...func(*restful.Container) error) ContainerBuilder {
 	var cb ContainerBuilder
 	cb.Register(funcs...)
-
 	return cb
 }

@@ -26,7 +26,7 @@ import (
 	"kubesphere.io/api/application/v1alpha1"
 
 	"helm.sh/helm/v3/pkg/repo"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	"helm.sh/helm/v3/pkg/chart/loader"
 )
@@ -72,6 +72,10 @@ func (h HelmVersionWrapper) GetRawSources() []string {
 
 func (h HelmVersionWrapper) GetKeywords() string {
 	return strings.Join(h.ChartVersion.Keywords, ",")
+}
+
+func (h HelmVersionWrapper) GetRawKeywords() []string {
+	return h.ChartVersion.Keywords
 }
 
 func (h HelmVersionWrapper) GetRawMaintainers() []*v1alpha1.Maintainer {

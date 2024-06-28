@@ -27,7 +27,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -35,7 +34,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	iam1alpha2 "kubesphere.io/api/iam/v1alpha2"
@@ -62,7 +61,6 @@ const (
 
 type Controller struct {
 	controller.BaseController
-	scheme               *runtime.Scheme
 	k8sClient            kubernetes.Interface
 	ksClient             kubesphere.Interface
 	groupInformer        iamv1alpha2informers.GroupInformer
@@ -220,7 +218,7 @@ func (c *Controller) reconcile(key string) error {
 				return item == finalizer
 			})
 
-			if group, err = c.ksClient.IamV1alpha2().Groups().Update(context.Background(), group, metav1.UpdateOptions{}); err != nil {
+			if _, err = c.ksClient.IamV1alpha2().Groups().Update(context.Background(), group, metav1.UpdateOptions{}); err != nil {
 				return err
 			}
 		}

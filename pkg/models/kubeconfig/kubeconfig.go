@@ -23,7 +23,7 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"time"
 
 	corev1listers "k8s.io/client-go/listers/core/v1"
@@ -38,7 +38,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	certutil "k8s.io/client-go/util/cert"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	iamv1alpha2 "kubesphere.io/api/iam/v1alpha2"
@@ -102,7 +102,7 @@ func (o *operator) CreateKubeConfig(user *iamv1alpha2.User) error {
 	if len(o.config.CAData) > 0 {
 		ca = o.config.CAData
 	} else {
-		ca, err = ioutil.ReadFile(inClusterCAFilePath)
+		ca, err = os.ReadFile(inClusterCAFilePath)
 		if err != nil {
 			klog.Errorln(err)
 			return err
@@ -220,7 +220,7 @@ func (o *operator) createCSR(username string) error {
 	}
 
 	var csrBuffer, keyBuffer bytes.Buffer
-	if err = pem.Encode(&keyBuffer, &pem.Block{Type: "PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(x509key)}); err != nil {
+	if err = pem.Encode(&keyBuffer, &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(x509key)}); err != nil {
 		klog.Errorln(err)
 		return err
 	}

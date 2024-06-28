@@ -22,11 +22,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/emicklei/go-restful"
+	"github.com/emicklei/go-restful/v3"
 	v1 "k8s.io/api/core/v1"
 	k8serr "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	"kubesphere.io/kubesphere/pkg/api"
 	"kubesphere.io/kubesphere/pkg/informers"
@@ -71,10 +71,6 @@ func newResourceHandler(k8sClient kubernetes.Interface, factory informers.Inform
 			factory.KubernetesSharedInformerFactory().Core().V1().Pods(),
 			factory.KubeSphereSharedInformerFactory().Iam().V1alpha2().Users(), ""),
 	}
-}
-
-func (r *resourceHandler) handleGetNamespacedResources(request *restful.Request, response *restful.Response) {
-	r.handleListNamespaceResources(request, response)
 }
 
 func (r *resourceHandler) handleListNamespaceResources(request *restful.Request, response *restful.Response) {

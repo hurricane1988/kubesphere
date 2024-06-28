@@ -14,9 +14,9 @@ limitations under the License.
 package v2alpha1
 
 import (
-	restful "github.com/emicklei/go-restful"
+	"github.com/emicklei/go-restful/v3"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	"kubesphere.io/kubesphere/pkg/api"
 	"kubesphere.io/kubesphere/pkg/apiserver/query"
@@ -84,7 +84,6 @@ func (h *openpitrixHandler) DescribeApplication(req *restful.Request, resp *rest
 	}
 
 	resp.WriteEntity(app)
-	return
 }
 
 func (h *openpitrixHandler) ListApplications(req *restful.Request, resp *restful.Response) {

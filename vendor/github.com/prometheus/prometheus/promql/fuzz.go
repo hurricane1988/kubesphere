@@ -12,14 +12,16 @@
 // limitations under the License.
 
 // Only build when go-fuzz is in use
+//go:build gofuzz
 // +build gofuzz
 
 package promql
 
 import (
+	"errors"
 	"io"
 
-	"github.com/prometheus/prometheus/pkg/textparse"
+	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
@@ -48,10 +50,21 @@ const (
 	fuzzInteresting = 1
 	fuzzMeh         = 0
 	fuzzDiscard     = -1
+
+	// Input size above which we know that Prometheus would consume too much
+	// memory. The recommended way to deal with it is check input size.
+	// https://google.github.io/oss-fuzz/getting-started/new-project-guide/#input-size
+	maxInputSize = 10240
 )
 
 func fuzzParseMetricWithContentType(in []byte, contentType string) int {
-	p := textparse.New(in, contentType)
+	p, warning := textparse.New(in, contentType)
+	if warning != nil {
+		// An invalid content type is being passed, which should not happen
+		// in this context.
+		panic(warning)
+	}
+
 	var err error
 	for {
 		_, err = p.Next()
@@ -59,7 +72,7 @@ func fuzzParseMetricWithContentType(in []byte, contentType string) int {
 			break
 		}
 	}
-	if err == io.EOF {
+	if errors.Is(err, io.EOF) {
 		err = nil
 	}
 
@@ -84,6 +97,9 @@ func FuzzParseOpenMetric(in []byte) int {
 
 // Fuzz the metric selector parser.
 func FuzzParseMetricSelector(in []byte) int {
+	if len(in) > maxInputSize {
+		return fuzzMeh
+	}
 	_, err := parser.ParseMetricSelector(string(in))
 	if err == nil {
 		return fuzzInteresting
@@ -94,6 +110,9 @@ func FuzzParseMetricSelector(in []byte) int {
 
 // Fuzz the expression parser.
 func FuzzParseExpr(in []byte) int {
+	if len(in) > maxInputSize {
+		return fuzzMeh
+	}
 	_, err := parser.ParseExpr(string(in))
 	if err == nil {
 		return fuzzInteresting

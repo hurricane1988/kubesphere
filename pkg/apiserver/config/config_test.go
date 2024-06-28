@@ -18,24 +18,24 @@ package config
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"testing"
 	"time"
-
-	"kubesphere.io/kubesphere/pkg/apiserver/authentication"
-	"kubesphere.io/kubesphere/pkg/apiserver/authorization"
 
 	"github.com/google/go-cmp/cmp"
 	"gopkg.in/yaml.v2"
 
 	networkv1alpha1 "kubesphere.io/api/network/v1alpha1"
 
+	"kubesphere.io/kubesphere/pkg/apiserver/authentication"
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication/oauth"
+	"kubesphere.io/kubesphere/pkg/apiserver/authorization"
+	"kubesphere.io/kubesphere/pkg/models/terminal"
 	"kubesphere.io/kubesphere/pkg/simple/client/alerting"
 	"kubesphere.io/kubesphere/pkg/simple/client/auditing"
 	"kubesphere.io/kubesphere/pkg/simple/client/cache"
 	"kubesphere.io/kubesphere/pkg/simple/client/devops/jenkins"
+	"kubesphere.io/kubesphere/pkg/simple/client/edgeruntime"
 	"kubesphere.io/kubesphere/pkg/simple/client/events"
 	"kubesphere.io/kubesphere/pkg/simple/client/gateway"
 	"kubesphere.io/kubesphere/pkg/simple/client/gpu"
@@ -55,7 +55,6 @@ import (
 )
 
 func newTestConfig() (*Config, error) {
-
 	var conf = &Config{
 		DevopsOptions: &jenkins.Options{
 			Host:           "http://ks-devops.kubesphere-devops-system.svc",
@@ -84,16 +83,17 @@ func newTestConfig() (*Config, error) {
 			ManagerPassword: "P@88w0rd",
 			UserSearchBase:  "ou=Users,dc=example,dc=org",
 			GroupSearchBase: "ou=Groups,dc=example,dc=org",
+			InitialCap:      10,
+			MaxCap:          100,
+			PoolName:        "ldap",
 		},
-		RedisOptions: &cache.Options{
-			Host:     "localhost",
-			Port:     6379,
-			Password: "KUBESPHERE_REDIS_PASSWORD",
-			DB:       0,
+		CacheOptions: &cache.Options{
+			Type:    "redis",
+			Options: map[string]interface{}{},
 		},
 		S3Options: &s3.Options{
 			Endpoint:        "http://minio.openpitrix-system.svc",
-			Region:          "",
+			Region:          "us-east-1",
 			DisableSSL:      false,
 			ForcePathStyle:  false,
 			AccessKeyID:     "ABCDEFGHIJKLMN",
@@ -148,6 +148,7 @@ func newTestConfig() (*Config, error) {
 			AuthenticateRateLimiterMaxTries: 5,
 			AuthenticateRateLimiterDuration: 30 * time.Minute,
 			JwtSecret:                       "xxxxxx",
+			LoginHistoryMaximumEntries:      100,
 			MultipleLogin:                   false,
 			OAuthOptions: &oauth.Options{
 				Issuer:            oauth.DefaultIssuer,
@@ -164,9 +165,7 @@ func newTestConfig() (*Config, error) {
 				AccessTokenInactivityTimeout: 0,
 			},
 		},
-		MultiClusterOptions: &multicluster.Options{
-			Enable: false,
-		},
+		MultiClusterOptions: multicluster.NewOptions(),
 		EventsOptions: &events.Options{
 			Host:        "http://elasticsearch-logging-data.kubesphere-logging-system.svc:9200",
 			IndexPrefix: "ks-logstash-events",
@@ -180,6 +179,9 @@ func newTestConfig() (*Config, error) {
 		KubeEdgeOptions: &kubeedge.Options{
 			Endpoint: "http://edge-watcher.kubeedge.svc/api/",
 		},
+		EdgeRuntimeOptions: &edgeruntime.Options{
+			Endpoint: "http://edgeservice.kubeedge.svc/api/",
+		},
 		MeteringOptions: &metering.Options{
 			RetentionDay: "7d",
 		},
@@ -190,6 +192,10 @@ func newTestConfig() (*Config, error) {
 		GPUOptions: &gpu.Options{
 			Kinds: []gpu.GPUKind{},
 		},
+		TerminalOptions: &terminal.Options{
+			Image:   "alpine:3.15",
+			Timeout: 600,
+		},
 	}
 	return conf, nil
 }
@@ -199,7 +205,7 @@ func saveTestConfig(t *testing.T, conf *Config) {
 	if err != nil {
 		t.Fatalf("error marshal config. %v", err)
 	}
-	err = ioutil.WriteFile(fmt.Sprintf("%s.yaml", defaultConfigurationName), content, 0640)
+	err = os.WriteFile(fmt.Sprintf("%s.yaml", defaultConfigurationName), content, 0640)
 	if err != nil {
 		t.Fatalf("error write configuration file, %v", err)
 	}
@@ -227,9 +233,6 @@ func TestGet(t *testing.T) {
 	saveTestConfig(t, conf)
 	defer cleanTestConfig(t)
 
-	conf.RedisOptions.Password = "P@88w0rd"
-	os.Setenv("KUBESPHERE_REDIS_PASSWORD", "P@88w0rd")
-
 	conf2, err := TryLoadFromDisk()
 	if err != nil {
 		t.Fatal(err)
@@ -242,7 +245,7 @@ func TestGet(t *testing.T) {
 func TestStripEmptyOptions(t *testing.T) {
 	var config Config
 
-	config.RedisOptions = &cache.Options{Host: ""}
+	config.CacheOptions = &cache.Options{Type: ""}
 	config.DevopsOptions = &jenkins.Options{Host: ""}
 	config.MonitoringOptions = &prometheus.Options{Endpoint: ""}
 	config.SonarQubeOptions = &sonarqube.Options{Host: ""}
@@ -271,10 +274,11 @@ func TestStripEmptyOptions(t *testing.T) {
 	config.EventsOptions = &events.Options{Host: ""}
 	config.AuditingOptions = &auditing.Options{Host: ""}
 	config.KubeEdgeOptions = &kubeedge.Options{Endpoint: ""}
+	config.EdgeRuntimeOptions = &edgeruntime.Options{Endpoint: ""}
 
 	config.stripEmptyOptions()
 
-	if config.RedisOptions != nil ||
+	if config.CacheOptions != nil ||
 		config.DevopsOptions != nil ||
 		config.MonitoringOptions != nil ||
 		config.SonarQubeOptions != nil ||
@@ -288,7 +292,8 @@ func TestStripEmptyOptions(t *testing.T) {
 		config.MultiClusterOptions != nil ||
 		config.EventsOptions != nil ||
 		config.AuditingOptions != nil ||
-		config.KubeEdgeOptions != nil {
+		config.KubeEdgeOptions != nil ||
+		config.EdgeRuntimeOptions != nil {
 		t.Fatal("config stripEmptyOptions failed")
 	}
 }

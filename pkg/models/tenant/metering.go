@@ -1,3 +1,16 @@
+// Copyright 2022 The KubeSphere Authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 package tenant
 
 import (
@@ -8,16 +21,13 @@ import (
 	"strings"
 	"time"
 
-	"kubesphere.io/kubesphere/pkg/constants"
-	"kubesphere.io/kubesphere/pkg/models/metering"
-
 	"github.com/pkg/errors"
 	appv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apiserver/pkg/authentication/user"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	tenantv1alpha2 "kubesphere.io/api/tenant/v1alpha2"
 
@@ -26,6 +36,8 @@ import (
 	"kubesphere.io/kubesphere/pkg/apiserver/authorization/authorizer"
 	"kubesphere.io/kubesphere/pkg/apiserver/query"
 	"kubesphere.io/kubesphere/pkg/apiserver/request"
+	"kubesphere.io/kubesphere/pkg/constants"
+	"kubesphere.io/kubesphere/pkg/models/metering"
 	monitoringmodel "kubesphere.io/kubesphere/pkg/models/monitoring"
 	"kubesphere.io/kubesphere/pkg/models/openpitrix"
 	"kubesphere.io/kubesphere/pkg/server/params"
@@ -174,7 +186,7 @@ func (t *tenantOperator) makeQueryOptions(user user.Info, q meteringv1alpha1.Que
 			var wsList *api.ListResult
 			qu := query.New()
 			qu.LabelSelector = q.LabelSelector
-			wsList, err = t.ListWorkspaces(user, qu)
+			wsList, err = t.ListWorkspaceTemplates(user, qu)
 			if err != nil {
 				return qo, err
 			}
@@ -689,7 +701,7 @@ func (t *tenantOperator) transformMetricData(metrics monitoringmodel.Metrics) me
 	for _, metric := range metrics.Results {
 		metricName := metric.MetricName
 		for _, metricValue := range metric.MetricValues {
-			//metricValue.SumValue
+			// metricValue.SumValue
 			podName := metricValue.Metadata["pod"]
 			if s, err := strconv.ParseFloat(metricValue.SumValue, 64); err != nil {
 				klog.Error("failed to parse string to float64")
@@ -719,41 +731,6 @@ func (t *tenantOperator) classifyPodStats(user user.Info, cluster, ns string, po
 	}
 
 	return
-}
-
-func (t *tenantOperator) listServices(user user.Info, ns string) (*corev1.ServiceList, error) {
-
-	svcScope := request.NamespaceScope
-
-	listSvc := authorizer.AttributesRecord{
-		User:            user,
-		Verb:            "list",
-		Resource:        "services",
-		Namespace:       ns,
-		ResourceRequest: true,
-		ResourceScope:   svcScope,
-	}
-
-	decision, _, err := t.authorizer.Authorize(listSvc)
-	if err != nil {
-		klog.Error(err)
-		return nil, err
-	}
-
-	if decision != authorizer.DecisionAllow {
-		_, err := t.am.ListRoleBindings(user.GetName(), nil, ns)
-		if err != nil {
-			klog.Error(err)
-			return nil, err
-		}
-	}
-
-	svcs, err := t.k8sclient.CoreV1().Services(ns).List(context.Background(), metav1.ListOptions{})
-	if err != nil {
-		return nil, err
-	}
-
-	return svcs, nil
 }
 
 // updateDeploysStats will update deployment field in resource stats struct with pod stats data and deployments will be classified into 3 classes:
@@ -826,9 +803,9 @@ func (t *tenantOperator) updateDeploysStats(user user.Info, cluster, ns string, 
 }
 
 // updateDaemonsetsStats will update daemonsets field in resource stats struct with pod stats data and daemonsets will be classified into 3 classes:
-// 	1. openpitrix daemonsets
-// 	2. app daemonsets
-// 	3. k8s daemonsets
+//  1. openpitrix daemonsets
+//  2. app daemonsets
+//  3. k8s daemonsets
 func (t *tenantOperator) updateDaemonsetsStats(user user.Info, cluster, ns string, podsStats metering.PodsStats, resourceStats *metering.ResourceStatistic) error {
 	daemonsetList, err := t.listDaemonsets(user, ns)
 	if err != nil {
@@ -964,6 +941,7 @@ func (t *tenantOperator) isAppComponent(ns, kind, componentName string) (bool, s
 
 	for appName, cList := range appWorkloads {
 		for _, component := range cList {
+			//nolint:staticcheck // TODO Use golang.org/x/text/cases instead.
 			if component == fmt.Sprintf("%s:%s", strings.Title(kind), componentName) {
 				return true, appName
 			}
@@ -974,9 +952,9 @@ func (t *tenantOperator) isAppComponent(ns, kind, componentName string) (bool, s
 }
 
 // updateStatefulsetsStats will update statefulsets field in resource stats struct with pod stats data and statefulsets will be classified into 3 classes:
-// 	1. openpitrix statefulsets
-// 	2. app statefulsets
-// 	3. k8s statefulsets
+//  1. openpitrix statefulsets
+//  2. app statefulsets
+//  3. k8s statefulsets
 func (t *tenantOperator) updateStatefulsetsStats(user user.Info, cluster, ns string, podsStats metering.PodsStats, resourceStats *metering.ResourceStatistic) error {
 	statefulsetsList, err := t.listStatefulsets(user, ns)
 	if err != nil {

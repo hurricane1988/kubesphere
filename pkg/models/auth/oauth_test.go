@@ -1,19 +1,17 @@
 /*
+Copyright 2021 The KubeSphere Authors.
 
- Copyright 2021 The KubeSphere Authors.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
 
- Licensed under the Apache License, Version 2.0 (the "License");
- you may not use this file except in compliance with the License.
- You may obtain a copy of the License at
+	http://www.apache.org/licenses/LICENSE-2.0
 
-     http://www.apache.org/licenses/LICENSE-2.0
-
- Unless required by applicable law or agreed to in writing, software
- distributed under the License is distributed on an "AS IS" BASIS,
- WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- See the License for the specific language governing permissions and
- limitations under the License.
-
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 package auth
 
@@ -23,6 +21,8 @@ import (
 	"net/http"
 	"reflect"
 	"testing"
+
+	"kubesphere.io/kubesphere/pkg/server/options"
 
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication"
 
@@ -46,12 +46,17 @@ func Test_oauthAuthenticator_Authenticate(t *testing.T) {
 					Name:          "fake",
 					MappingMethod: "auto",
 					Type:          "FakeIdentityProvider",
-					Provider: oauth.DynamicOptions{
+					Provider: options.DynamicOptions{
 						"identities": map[string]interface{}{
 							"code1": map[string]string{
 								"uid":      "100001",
 								"email":    "user1@kubesphere.io",
 								"username": "user1",
+							},
+							"code2": map[string]string{
+								"uid":      "100002",
+								"email":    "user2@kubesphere.io",
+								"username": "user2",
 							},
 						},
 					},
@@ -67,8 +72,14 @@ func Test_oauthAuthenticator_Authenticate(t *testing.T) {
 
 	ksClient := fakeks.NewSimpleClientset()
 	ksInformerFactory := ksinformers.NewSharedInformerFactory(ksClient, 0)
-	err := ksInformerFactory.Iam().V1alpha2().Users().Informer().GetIndexer().Add(newUser("user1", "100001", "fake"))
-	if err != nil {
+
+	if err := ksInformerFactory.Iam().V1alpha2().Users().Informer().GetIndexer().Add(newUser("user1", "100001", "fake")); err != nil {
+		t.Fatal(err)
+	}
+
+	blockedUser := newUser("user2", "100002", "fake")
+	blockedUser.Status = iamv1alpha2.UserStatus{State: iamv1alpha2.UserDisabled}
+	if err := ksInformerFactory.Iam().V1alpha2().Users().Informer().GetIndexer().Add(blockedUser); err != nil {
 		t.Fatal(err)
 	}
 
@@ -102,6 +113,22 @@ func Test_oauthAuthenticator_Authenticate(t *testing.T) {
 			},
 			provider: "fake",
 			wantErr:  false,
+		},
+		{
+			name: "Blocked user test",
+			oauthAuthenticator: NewOAuthAuthenticator(
+				nil,
+				ksInformerFactory.Iam().V1alpha2().Users().Lister(),
+				oauthOptions,
+			),
+			args: args{
+				ctx:      context.Background(),
+				provider: "fake",
+				req:      must(http.NewRequest(http.MethodGet, "https://ks-console.kubesphere.io/oauth/callback/test?code=code2&state=100002", nil)),
+			},
+			userInfo: nil,
+			provider: "",
+			wantErr:  true,
 		},
 		{
 			name: "Should successfully",
@@ -188,9 +215,9 @@ func (fakeProviderFactory) Type() string {
 	return "FakeIdentityProvider"
 }
 
-func (fakeProviderFactory) Create(options oauth.DynamicOptions) (identityprovider.OAuthProvider, error) {
+func (fakeProviderFactory) Create(dynamicOptions options.DynamicOptions) (identityprovider.OAuthProvider, error) {
 	var fakeProvider fakeProvider
-	if err := mapstructure.Decode(options, &fakeProvider); err != nil {
+	if err := mapstructure.Decode(dynamicOptions, &fakeProvider); err != nil {
 		return nil, err
 	}
 	return &fakeProvider, nil

@@ -28,9 +28,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
-	promlabels "github.com/prometheus/prometheus/pkg/labels"
+	promlabels "github.com/prometheus/prometheus/model/labels"
 	metricsapi "k8s.io/metrics/pkg/apis/metrics"
 	metricsV1beta1 "k8s.io/metrics/pkg/apis/metrics/v1beta1"
 	metricsclient "k8s.io/metrics/pkg/client/clientset/versioned"

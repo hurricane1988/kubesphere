@@ -9,67 +9,86 @@ import (
 	"github.com/open-policy-agent/opa/topdown/builtins"
 )
 
-func builtinArrayConcat(a, b ast.Value) (ast.Value, error) {
-	arrA, err := builtins.ArrayOperand(a, 1)
+func builtinArrayConcat(_ BuiltinContext, operands []*ast.Term, iter func(*ast.Term) error) error {
+	arrA, err := builtins.ArrayOperand(operands[0].Value, 1)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	arrB, err := builtins.ArrayOperand(b, 2)
+	arrB, err := builtins.ArrayOperand(operands[1].Value, 2)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	arrC := make(ast.Array, 0, len(arrA)+len(arrB))
+	arrC := make([]*ast.Term, arrA.Len()+arrB.Len())
 
-	for _, elemA := range arrA {
-		arrC = append(arrC, elemA)
-	}
+	i := 0
+	arrA.Foreach(func(elemA *ast.Term) {
+		arrC[i] = elemA
+		i++
+	})
 
-	for _, elemB := range arrB {
-		arrC = append(arrC, elemB)
-	}
+	arrB.Foreach(func(elemB *ast.Term) {
+		arrC[i] = elemB
+		i++
+	})
 
-	return arrC, nil
+	return iter(ast.NewTerm(ast.NewArray(arrC...)))
 }
 
-func builtinArraySlice(a, i, j ast.Value) (ast.Value, error) {
-	arr, err := builtins.ArrayOperand(a, 1)
+func builtinArraySlice(_ BuiltinContext, operands []*ast.Term, iter func(*ast.Term) error) error {
+	arr, err := builtins.ArrayOperand(operands[0].Value, 1)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	startIndex, err := builtins.IntOperand(i, 2)
+	startIndex, err := builtins.IntOperand(operands[1].Value, 2)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	stopIndex, err := builtins.IntOperand(j, 3)
+	stopIndex, err := builtins.IntOperand(operands[2].Value, 3)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	// Return empty array if bounds cannot be clamped sensibly.
-	if (startIndex >= stopIndex) || (startIndex <= 0 && stopIndex <= 0) {
-		return arr[0:0], nil
+	// Clamp stopIndex to avoid out-of-range errors. If negative, clamp to zero.
+	// Otherwise, clamp to length of array.
+	if stopIndex < 0 {
+		stopIndex = 0
+	} else if stopIndex > arr.Len() {
+		stopIndex = arr.Len()
 	}
 
-	// Clamp bounds to avoid out-of-range errors.
+	// Clamp startIndex to avoid out-of-range errors. If negative, clamp to zero.
+	// Otherwise, clamp to stopIndex to avoid to avoid cases like arr[1:0].
 	if startIndex < 0 {
 		startIndex = 0
+	} else if startIndex > stopIndex {
+		startIndex = stopIndex
 	}
 
-	if stopIndex > len(arr) {
-		stopIndex = len(arr)
+	return iter(ast.NewTerm(arr.Slice(startIndex, stopIndex)))
+}
+
+func builtinArrayReverse(_ BuiltinContext, operands []*ast.Term, iter func(*ast.Term) error) error {
+	arr, err := builtins.ArrayOperand(operands[0].Value, 1)
+	if err != nil {
+		return err
 	}
 
-	arrb := arr[startIndex:stopIndex]
+	length := arr.Len()
+	reversedArr := make([]*ast.Term, length)
 
-	return arrb, nil
+	for index := 0; index < length; index++ {
+		reversedArr[index] = arr.Elem(length - index - 1)
+	}
 
+	return iter(ast.ArrayTerm(reversedArr...))
 }
 
 func init() {
-	RegisterFunctionalBuiltin2(ast.ArrayConcat.Name, builtinArrayConcat)
-	RegisterFunctionalBuiltin3(ast.ArraySlice.Name, builtinArraySlice)
+	RegisterBuiltinFunc(ast.ArrayConcat.Name, builtinArrayConcat)
+	RegisterBuiltinFunc(ast.ArraySlice.Name, builtinArraySlice)
+	RegisterBuiltinFunc(ast.ArrayReverse.Name, builtinArrayReverse)
 }

@@ -280,12 +280,15 @@ type AppVersionReview struct {
 
 	// version type
 	VersionType string `json:"version_type,omitempty"`
+
+	// Workspace of the app version
+	Workspace string `json:"workspace,omitempty"`
 }
 
 type CreateAppRequest struct {
 
 	// app icon
-	Icon strfmt.Base64 `json:"icon,omitempty"`
+	Icon string `json:"icon,omitempty"`
 
 	// isv
 	Isv string `json:"isv,omitempty"`
@@ -410,6 +413,8 @@ type ValidatePackageResponse struct {
 
 	// app version name.eg.[0.1.0]
 	VersionName string `json:"version_name,omitempty"`
+
+	Icon string `json:"icon,omitempty"`
 }
 
 type CreateAppVersionRequest struct {
@@ -710,7 +715,7 @@ type Repo struct {
 	// selectors
 	Selectors RepoSelectors `json:"selectors"`
 
-	// status eg.[active|deleted]
+	// status eg.[successful|failed|syncing]
 	Status string `json:"status,omitempty"`
 
 	// record status changed time

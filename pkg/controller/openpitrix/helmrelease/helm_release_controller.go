@@ -27,9 +27,7 @@ import (
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/tools/cache"
-	"k8s.io/client-go/tools/record"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -68,10 +66,8 @@ type ReconcileHelmRelease struct {
 	StorageClient s3.Interface
 	KsFactory     externalversions.SharedInformerFactory
 	client.Client
-	recorder record.EventRecorder
 	// mock helm install && uninstall
 	helmMock                  bool
-	informer                  cache.SharedIndexInformer
 	checkReleaseStatusBackoff *flowcontrol.Backoff
 
 	clusterClients     clusterclient.ClusterClients
@@ -84,15 +80,18 @@ type ReconcileHelmRelease struct {
 	StopChan <-chan struct{}
 }
 
-//            =========================>
-//            ^                         |
-//            |        <==upgraded<==upgrading================
-//            |        \      =========^                     /
-//            |         |   /                               |
+//	=========================>
+//	^                         |
+//	|        <==upgraded<==upgrading================
+//	|        \      =========^                     /
+//	|         |   /                               |
+//
 // creating=>created===>active=====>deleting=>deleted       |
-//                 \    ^           /                     |
-//                  \   |  /======>                      /
-//                   \=>failed<==========================
+//
+//	\    ^           /                     |
+//	 \   |  /======>                      /
+//	  \=>failed<==========================
+//
 // Reconcile reads that state of the cluster for a helmreleases object and makes changes based on the state read
 // and what is in the helmreleases.Spec
 // +kubebuilder:rbac:groups=application.kubesphere.io,resources=helmreleases,verbs=get;list;watch;create;update;patch;delete
@@ -163,10 +162,7 @@ func (r *ReconcileHelmRelease) Reconcile(ctx context.Context, request reconcile.
 			klog.V(3).Infof("remove helm release %s finalizer", instance.Name)
 			// remove finalizer
 			instance.ObjectMeta.Finalizers = sliceutil.RemoveString(instance.ObjectMeta.Finalizers, func(item string) bool {
-				if item == HelmReleaseFinalizer {
-					return true
-				}
-				return false
+				return item == HelmReleaseFinalizer
 			})
 			if err := r.Update(context.Background(), instance); err != nil {
 				return reconcile.Result{}, err
@@ -183,9 +179,16 @@ func (r *ReconcileHelmRelease) reconcile(instance *v1alpha1.HelmRelease) (reconc
 
 	var err error
 	switch instance.Status.State {
-	case v1alpha1.HelmStatusDeleting, v1alpha1.HelmStatusFailed:
+	case v1alpha1.HelmStatusDeleting:
 		// no operation
 		return reconcile.Result{}, nil
+	case v1alpha1.HelmStatusFailed:
+		// Release used to be failed, but instance.Status.Version not equal to instance.Spec.Version
+		if instance.Status.Version > 0 && instance.Status.Version != instance.Spec.Version {
+			return r.createOrUpgradeHelmRelease(instance, true)
+		} else {
+			return reconcile.Result{}, nil
+		}
 	case v1alpha1.HelmStatusActive:
 		// Release used to be active, but instance.Status.Version not equal to instance.Spec.Version
 		if instance.Status.Version != instance.Spec.Version {

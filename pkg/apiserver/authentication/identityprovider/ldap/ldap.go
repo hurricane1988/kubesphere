@@ -21,16 +21,16 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"time"
 
 	"github.com/go-ldap/ldap"
 	"github.com/mitchellh/mapstructure"
 	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	"kubesphere.io/kubesphere/pkg/apiserver/authentication/identityprovider"
-	"kubesphere.io/kubesphere/pkg/apiserver/authentication/oauth"
+	"kubesphere.io/kubesphere/pkg/server/options"
 )
 
 const (
@@ -45,7 +45,7 @@ func init() {
 type ldapProvider struct {
 	// Host and optional port of the LDAP server in the form "host:port".
 	// If the port is not supplied, 389 for insecure or StartTLS connections, 636
-	Host string `json:"host,omitempty" yaml:"managerDN"`
+	Host string `json:"host,omitempty" yaml:"host"`
 	// Timeout duration when reading data from remote server. Default to 15s.
 	ReadTimeout int `json:"readTimeout" yaml:"readTimeout"`
 	// If specified, connections will use the ldaps:// protocol
@@ -85,9 +85,9 @@ func (l *ldapProviderFactory) Type() string {
 	return ldapIdentityProvider
 }
 
-func (l *ldapProviderFactory) Create(options oauth.DynamicOptions) (identityprovider.GenericProvider, error) {
+func (l *ldapProviderFactory) Create(opts options.DynamicOptions) (identityprovider.GenericProvider, error) {
 	var ldapProvider ldapProvider
-	if err := mapstructure.Decode(options, &ldapProvider); err != nil {
+	if err := mapstructure.Decode(opts, &ldapProvider); err != nil {
 		return nil, err
 	}
 	if ldapProvider.ReadTimeout <= 0 {
@@ -186,7 +186,7 @@ func (l *ldapProvider) newConn() (*ldap.Conn, error) {
 	var err error
 	// Load CA cert
 	if l.RootCA != "" {
-		if caCert, err = ioutil.ReadFile(l.RootCA); err != nil {
+		if caCert, err = os.ReadFile(l.RootCA); err != nil {
 			klog.Error(err)
 			return nil, err
 		}

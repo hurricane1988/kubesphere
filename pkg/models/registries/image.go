@@ -23,7 +23,7 @@ import (
 
 	"github.com/docker/distribution/reference"
 	"github.com/opencontainers/go-digest"
-	log "k8s.io/klog"
+	"k8s.io/klog/v2"
 )
 
 // Image holds information about an image.
@@ -56,13 +56,13 @@ type DockerURL struct {
 func (u *DockerURL) StringWithoutScheme() string {
 	u.Scheme = ""
 	s := u.String()
-	return strings.Trim(s, "//")
+	return strings.Trim(s, "/")
 }
 
 func ParseDockerURL(rawurl string) (*DockerURL, error) {
 	url, err := url.Parse(rawurl)
 	if err != nil {
-		log.Errorf("%+v", err)
+		klog.Errorf("%+v", err)
 		return nil, err
 	}
 	return &DockerURL{URL: url}, nil

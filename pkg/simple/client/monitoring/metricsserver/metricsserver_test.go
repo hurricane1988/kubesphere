@@ -2,10 +2,9 @@ package metricsserver
 
 import (
 	"fmt"
+	"os"
 	"testing"
 	"time"
-
-	"io/ioutil"
 
 	"github.com/google/go-cmp/cmp"
 	jsoniter "github.com/json-iterator/go"
@@ -514,7 +513,7 @@ func TestGetNamedMetricsOverTime(t *testing.T) {
 }
 
 func jsonFromFile(expectedFile string, expectedJsonPtr interface{}) error {
-	json, err := ioutil.ReadFile(fmt.Sprintf("./testdata/%s", expectedFile))
+	json, err := os.ReadFile(fmt.Sprintf("./testdata/%s", expectedFile))
 	if err != nil {
 		return err
 	}
@@ -532,7 +531,7 @@ func sortedResults(result []monitoring.Metric) []monitoring.Metric {
 		metricValues := mr.MetricData.MetricValues
 		length := len(metricValues)
 		for i, mv := range metricValues {
-			podName, _ := mv.Metadata["pod"]
+			podName := mv.Metadata["pod"]
 			if i == 0 && podName == "pod2" && length >= 2 {
 				metricValues[0], metricValues[1] = metricValues[1], metricValues[0]
 			}

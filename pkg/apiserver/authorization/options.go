@@ -22,13 +22,13 @@ import (
 	"fmt"
 
 	"github.com/spf13/pflag"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	"kubesphere.io/kubesphere/pkg/utils/sliceutil"
 )
 
 type Options struct {
-	Mode string `json:"mode"  yaml:"mode"`
+	Mode string `json:"mode" yaml:"mode"`
 }
 
 func NewOptions() *Options {

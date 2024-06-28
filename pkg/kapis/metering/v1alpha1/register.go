@@ -1,34 +1,32 @@
 /*
+Copyright 2019 The KubeSphere Authors.
 
- Copyright 2019 The KubeSphere Authors.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
 
- Licensed under the Apache License, Version 2.0 (the "License");
- you may not use this file except in compliance with the License.
- You may obtain a copy of the License at
+http://www.apache.org/licenses/LICENSE-2.0
 
- http://www.apache.org/licenses/LICENSE-2.0
-
- Unless required by applicable law or agreed to in writing, software
- distributed under the License is distributed on an "AS IS" BASIS,
- WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- See the License for the specific language governing permissions and
- limitations under the License.
-
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 package v1alpha1
 
 import (
 	"net/http"
 
-	openpitrixoptions "kubesphere.io/kubesphere/pkg/simple/client/openpitrix"
+	"kubesphere.io/kubesphere/pkg/models/openpitrix"
 
-	"kubesphere.io/kubesphere/pkg/client/clientset/versioned"
-
-	"github.com/emicklei/go-restful"
-	restfulspec "github.com/emicklei/go-restful-openapi"
+	restfulspec "github.com/emicklei/go-restful-openapi/v2"
+	"github.com/emicklei/go-restful/v3"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
+
+	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"kubesphere.io/kubesphere/pkg/apiserver/runtime"
 	"kubesphere.io/kubesphere/pkg/constants"
@@ -47,10 +45,10 @@ const (
 
 var GroupVersion = schema.GroupVersion{Group: groupName, Version: "v1alpha1"}
 
-func AddToContainer(c *restful.Container, k8sClient kubernetes.Interface, meteringClient monitoring.Interface, factory informers.InformerFactory, ksClient versioned.Interface, cache cache.Cache, meteringOptions *meteringclient.Options, opOptions *openpitrixoptions.Options) error {
+func AddToContainer(c *restful.Container, k8sClient kubernetes.Interface, meteringClient monitoring.Interface, factory informers.InformerFactory, cache cache.Cache, meteringOptions *meteringclient.Options, opClient openpitrix.Interface, rtClient runtimeclient.Client) error {
 	ws := runtime.NewWebService(GroupVersion)
 
-	h := newHandler(k8sClient, meteringClient, factory, ksClient, resourcev1alpha3.NewResourceGetter(factory, cache), meteringOptions, opOptions)
+	h := newHandler(k8sClient, meteringClient, factory, resourcev1alpha3.NewResourceGetter(factory, cache), meteringOptions, opClient, rtClient)
 
 	ws.Route(ws.GET("/cluster").
 		To(h.HandleClusterMeterQuery).

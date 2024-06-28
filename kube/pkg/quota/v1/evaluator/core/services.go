@@ -94,7 +94,7 @@ func (p *serviceEvaluator) UncoveredQuotaScopes(limitedScopes []corev1.ScopedRes
 
 // convert the input object to an internal service object or error.
 func toExternalServiceOrError(obj runtime.Object) (*corev1.Service, error) {
-	svc := &corev1.Service{}
+	var svc *corev1.Service
 	switch t := obj.(type) {
 	case *corev1.Service:
 		svc = t
@@ -138,7 +138,7 @@ func (p *serviceEvaluator) UsageStats(options quota.UsageStatsOptions) (quota.Us
 
 var _ quota.Evaluator = &serviceEvaluator{}
 
-//GetQuotaServiceType returns ServiceType if the service type is eligible to track against a quota, nor return ""
+// GetQuotaServiceType returns ServiceType if the service type is eligible to track against a quota, nor return ""
 func GetQuotaServiceType(service *corev1.Service) corev1.ServiceType {
 	switch service.Spec.Type {
 	case corev1.ServiceTypeNodePort:

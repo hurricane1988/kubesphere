@@ -23,6 +23,8 @@ import (
 	"reflect"
 	"testing"
 
+	"kubesphere.io/kubesphere/pkg/server/options"
+
 	"github.com/mitchellh/mapstructure"
 	"golang.org/x/crypto/bcrypt"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -62,7 +64,7 @@ func Test_passwordAuthenticator_Authenticate(t *testing.T) {
 					Name:          "fakepwd",
 					MappingMethod: "auto",
 					Type:          "fakePasswordProvider",
-					Provider: oauth.DynamicOptions{
+					Provider: options.DynamicOptions{
 						"identities": map[string]interface{}{
 							"user1": map[string]string{
 								"uid":      "100001",
@@ -74,6 +76,38 @@ func Test_passwordAuthenticator_Authenticate(t *testing.T) {
 								"uid":      "100002",
 								"email":    "user2@kubesphere.io",
 								"username": "user2",
+								"password": "password",
+							},
+						},
+					},
+				},
+				{
+					Name:                     "fakepwd2",
+					MappingMethod:            "auto",
+					Type:                     "fakePasswordProvider",
+					DisableLoginConfirmation: true,
+					Provider: options.DynamicOptions{
+						"identities": map[string]interface{}{
+							"user5": map[string]string{
+								"uid":      "100005",
+								"email":    "user5@kubesphere.io",
+								"username": "user5",
+								"password": "password",
+							},
+						},
+					},
+				},
+				{
+					Name:                     "fakepwd3",
+					MappingMethod:            "lookup",
+					Type:                     "fakePasswordProvider",
+					DisableLoginConfirmation: true,
+					Provider: options.DynamicOptions{
+						"identities": map[string]interface{}{
+							"user6": map[string]string{
+								"uid":      "100006",
+								"email":    "user6@kubesphere.io",
+								"username": "user6",
 								"password": "password",
 							},
 						},
@@ -91,8 +125,8 @@ func Test_passwordAuthenticator_Authenticate(t *testing.T) {
 	ksClient := fakeks.NewSimpleClientset()
 	ksInformerFactory := ksinformers.NewSharedInformerFactory(ksClient, 0)
 	err := ksInformerFactory.Iam().V1alpha2().Users().Informer().GetIndexer().Add(newUser("user1", "100001", "fakepwd"))
-	err = ksInformerFactory.Iam().V1alpha2().Users().Informer().GetIndexer().Add(newUser("user3", "100003", ""))
-	err = ksInformerFactory.Iam().V1alpha2().Users().Informer().GetIndexer().Add(newActiveUser("user4", "password"))
+	_ = ksInformerFactory.Iam().V1alpha2().Users().Informer().GetIndexer().Add(newUser("user3", "100003", ""))
+	_ = ksInformerFactory.Iam().V1alpha2().Users().Informer().GetIndexer().Add(newActiveUser("user4", "password"))
 
 	if err != nil {
 		t.Fatal(err)
@@ -108,6 +142,7 @@ func Test_passwordAuthenticator_Authenticate(t *testing.T) {
 		ctx      context.Context
 		username string
 		password string
+		provider string
 	}
 	tests := []struct {
 		name                  string
@@ -124,6 +159,7 @@ func Test_passwordAuthenticator_Authenticate(t *testing.T) {
 				ctx:      context.Background(),
 				username: "user1",
 				password: "password",
+				provider: "fakepwd",
 			},
 			want: &user.DefaultInfo{
 				Name: "user1",
@@ -137,6 +173,7 @@ func Test_passwordAuthenticator_Authenticate(t *testing.T) {
 				ctx:      context.Background(),
 				username: "user2",
 				password: "password",
+				provider: "fakepwd",
 			},
 			want: &user.DefaultInfo{
 				Name: "system:pre-registration",
@@ -148,6 +185,29 @@ func Test_passwordAuthenticator_Authenticate(t *testing.T) {
 				},
 			},
 			wantErr: false,
+		},
+		{
+			name:                  "Should create user and return",
+			passwordAuthenticator: authenticator,
+			args: args{
+				ctx:      context.Background(),
+				username: "user5",
+				password: "password",
+				provider: "fakepwd2",
+			},
+			want:    &user.DefaultInfo{Name: "user5"},
+			wantErr: false,
+		},
+		{
+			name:                  "Should return user not found",
+			passwordAuthenticator: authenticator,
+			args: args{
+				ctx:      context.Background(),
+				username: "user6",
+				password: "password",
+				provider: "fakepwd3",
+			},
+			wantErr: true,
 		},
 		{
 			name:                  "Should failed login",
@@ -176,7 +236,7 @@ func Test_passwordAuthenticator_Authenticate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			p := tt.passwordAuthenticator
-			got, _, err := p.Authenticate(tt.args.ctx, tt.args.username, tt.args.password)
+			got, _, err := p.Authenticate(tt.args.ctx, tt.args.provider, tt.args.username, tt.args.password)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("passwordAuthenticator.Authenticate() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -218,9 +278,9 @@ func (fakePasswordProviderFactory) Type() string {
 	return "fakePasswordProvider"
 }
 
-func (fakePasswordProviderFactory) Create(options oauth.DynamicOptions) (identityprovider.GenericProvider, error) {
+func (fakePasswordProviderFactory) Create(dynamicOptions options.DynamicOptions) (identityprovider.GenericProvider, error) {
 	var fakeProvider fakePasswordProvider
-	if err := mapstructure.Decode(options, &fakeProvider); err != nil {
+	if err := mapstructure.Decode(dynamicOptions, &fakeProvider); err != nil {
 		return nil, err
 	}
 	return &fakeProvider, nil
@@ -242,7 +302,6 @@ func newActiveUser(username string, password string) *iamv1alpha2.User {
 	u := newUser(username, "", "")
 	password, _ = encrypt(password)
 	u.Spec.EncryptedPassword = password
-	s := iamv1alpha2.UserActive
-	u.Status.State = &s
+	u.Status.State = iamv1alpha2.UserActive
 	return u
 }

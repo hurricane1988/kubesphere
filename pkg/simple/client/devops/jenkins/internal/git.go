@@ -4,7 +4,7 @@ import (
 	"strconv"
 
 	"github.com/beevik/etree"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	devopsv1alpha3 "kubesphere.io/api/devops/v1alpha3"
 )
@@ -53,7 +53,6 @@ func AppendGitSourceToEtree(source *etree.Element, gitSource *devopsv1alpha3.Git
 		regexTraits.CreateAttr("plugin", "scm-api")
 		regexTraits.CreateElement("regex").SetText(gitSource.RegexFilter)
 	}
-	return
 }
 
 func GetGitSourcefromEtree(source *etree.Element) *devopsv1alpha3.GitSource {

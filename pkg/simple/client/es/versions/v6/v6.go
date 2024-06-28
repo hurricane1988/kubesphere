@@ -22,12 +22,15 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"time"
 
 	"github.com/elastic/go-elasticsearch/v6"
 	"github.com/elastic/go-elasticsearch/v6/esapi"
+	jsoniter "github.com/json-iterator/go"
+
+	"kubesphere.io/kubesphere/pkg/simple/client/es/versions"
 )
 
 type Elastic struct {
@@ -79,13 +82,20 @@ func (e *Elastic) Search(indices string, body []byte, scroll bool) ([]byte, erro
 		return nil, parseError(response)
 	}
 
-	return ioutil.ReadAll(response.Body)
+	return io.ReadAll(response.Body)
 }
 
 func (e *Elastic) Scroll(id string) ([]byte, error) {
+	body, err := jsoniter.Marshal(map[string]string{
+		"scroll_id": id,
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	response, err := e.Client.Scroll(
 		e.Client.Scroll.WithContext(context.Background()),
-		e.Client.Scroll.WithScrollID(id),
+		e.Client.Scroll.WithBody(bytes.NewBuffer(body)),
 		e.Client.Scroll.WithScroll(time.Minute))
 	if err != nil {
 		return nil, err
@@ -96,7 +106,7 @@ func (e *Elastic) Scroll(id string) ([]byte, error) {
 		return nil, parseError(response)
 	}
 
-	return ioutil.ReadAll(response.Body)
+	return io.ReadAll(response.Body)
 }
 
 func (e *Elastic) ClearScroll(scrollId string) {
@@ -112,12 +122,15 @@ func (e *Elastic) GetTotalHitCount(v interface{}) int64 {
 }
 
 func parseError(response *esapi.Response) error {
-	var e map[string]interface{}
+	var e versions.Error
 	if err := json.NewDecoder(response.Body).Decode(&e); err != nil {
 		return err
 	} else {
 		// Print the response status and error information.
-		e, _ := e["error"].(map[string]interface{})
-		return fmt.Errorf("type: %v, reason: %v", e["type"], e["reason"])
+		if len(e.Details.RootCause) != 0 {
+			return fmt.Errorf("type: %v, reason: %v", e.Details.Type, e.Details.RootCause[0].Reason)
+		} else {
+			return fmt.Errorf("type: %v, reason: %v", e.Details.Type, e.Details.Reason)
+		}
 	}
 }

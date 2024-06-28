@@ -19,8 +19,8 @@ package v2alpha1
 import (
 	"net/http"
 
-	"github.com/emicklei/go-restful"
-	restfulspec "github.com/emicklei/go-restful-openapi"
+	restfulspec "github.com/emicklei/go-restful-openapi/v2"
+	"github.com/emicklei/go-restful/v3"
 	promresourcesclient "github.com/prometheus-operator/prometheus-operator/pkg/client/versioned"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
@@ -47,7 +47,6 @@ func AddToContainer(container *restful.Container, informers informers.InformerFa
 	if informers == nil || promResourceClient == nil || ruleClient == nil || option == nil {
 		h := func(req *restful.Request, resp *restful.Response) {
 			ksapi.HandleBadRequest(resp, nil, alertingv2alpha1.ErrAlertingAPIV2NotEnabled)
-			return
 		}
 		ws.Route(ws.GET("/{path:*}").To(h).Returns(http.StatusOK, ksapi.StatusOK, nil))
 		ws.Route(ws.PUT("/{path:*}").To(h).Returns(http.StatusOK, ksapi.StatusOK, nil))

@@ -21,7 +21,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"mime/multipart"
 	"net/http"
 	"net/url"
@@ -29,7 +28,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/form3tech-oss/jwt-go"
+	"github.com/golang-jwt/jwt/v4"
 
 	authtoken "kubesphere.io/kubesphere/pkg/apiserver/authentication/token"
 	"kubesphere.io/kubesphere/pkg/simple/client/devops"
@@ -98,6 +97,7 @@ func (r *Requester) SetCrumb(ar *APIRequest) error {
 		}
 		return err
 	}
+	response.Body.Close()
 	if response.StatusCode == 200 && crumbData["crumbRequestField"] != "" {
 		ar.SetHeader(crumbData["crumbRequestField"], crumbData["crumb"])
 	}
@@ -184,7 +184,9 @@ func (r *Requester) SetClient(client *http.Client) *Requester {
 	return r
 }
 
-//Add auth on redirect if required.
+// Add auth on redirect if required.
+//
+//nolint:unused
 func (r *Requester) redirectPolicyFunc(req *http.Request, via []*http.Request) error {
 	if r.BasicAuth != nil {
 		req.SetBasicAuth(r.BasicAuth.Username, r.BasicAuth.Password)
@@ -410,7 +412,7 @@ func (r *Requester) DoPostForm(ar *APIRequest, responseStruct interface{}, form 
 	for k, v := range form {
 		formValue.Set(k, v)
 	}
-	req, err := http.NewRequest("POST", URL.String(), strings.NewReader(formValue.Encode()))
+	req, _ := http.NewRequest("POST", URL.String(), strings.NewReader(formValue.Encode()))
 	if r.BasicAuth != nil {
 		req.SetBasicAuth(r.BasicAuth.Username, r.BasicAuth.Password)
 	}
@@ -446,7 +448,7 @@ func (r *Requester) DoPostForm(ar *APIRequest, responseStruct interface{}, form 
 func (r *Requester) ReadRawResponse(response *http.Response, responseStruct interface{}) (*http.Response, error) {
 	defer response.Body.Close()
 
-	content, err := ioutil.ReadAll(response.Body)
+	content, err := io.ReadAll(response.Body)
 	if err != nil {
 		return nil, err
 	}
@@ -476,7 +478,7 @@ func CheckResponse(r *http.Response) error {
 	}
 	defer r.Body.Close()
 	errorResponse := &devops.ErrorResponse{Response: r}
-	data, err := ioutil.ReadAll(r.Body)
+	data, err := io.ReadAll(r.Body)
 	if err == nil && data != nil {
 		errorResponse.Body = data
 		errorResponse.Message = string(data)

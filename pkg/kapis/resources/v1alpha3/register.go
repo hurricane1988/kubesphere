@@ -17,8 +17,8 @@ limitations under the License.
 package v1alpha3
 
 import (
-	"github.com/emicklei/go-restful"
-	restfulspec "github.com/emicklei/go-restful-openapi"
+	restfulspec "github.com/emicklei/go-restful-openapi/v2"
+	"github.com/emicklei/go-restful/v3"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
@@ -88,6 +88,7 @@ func AddToContainer(c *restful.Container, informerFactory informers.InformerFact
 		Param(webservice.QueryParameter(query.ParameterLimit, "limit").Required(false)).
 		Param(webservice.QueryParameter(query.ParameterAscending, "sort parameters, e.g. reverse=true").Required(false).DefaultValue("ascending=false")).
 		Param(webservice.QueryParameter(query.ParameterOrderBy, "sort parameters, e.g. orderBy=createTime")).
+		Param(webservice.QueryParameter(query.ParameterFieldSelector, "field selector used for filtering, you can use the = , == and != operators with field selectors( = and == mean the same thing), e.g. fieldSelector=type=kubernetes.io/dockerconfigjson, multiple separated by comma").Required(false)).
 		Returns(http.StatusOK, ok, api.ListResult{}))
 
 	webservice.Route(webservice.GET("/namespaces/{namespace}/{resources}/{name}").
@@ -140,7 +141,9 @@ func AddToContainer(c *restful.Container, informerFactory informers.InformerFact
 		Param(webservice.PathParameter("namespace", "Namespace of the image repository secret.").Required(true)).
 		Param(webservice.QueryParameter("repository", "Repository to query, e.g. calico/cni.").Required(true)).
 		Param(webservice.QueryParameter("secret", "Secret name of the image repository credential, left empty means anonymous fetch.").Required(false)).
-		Metadata(restfulspec.KeyOpenAPITags, []string{tagNamespacedResource}).
+		Param(webservice.QueryParameter(query.ParameterPage, "page").Required(false).DataFormat("page=%d").DefaultValue("page=1")).
+		Param(webservice.QueryParameter(query.ParameterLimit, "limit").Required(false)).
+		Param(webservice.QueryParameter(query.ParameterAscending, "sort parameters, e.g. reverse=true").Required(false).DefaultValue("ascending=false")).
 		Doc("List repository tags, this is an experimental API, use it by your own caution.").
 		Returns(http.StatusOK, ok, v2.RepositoryTags{}))
 

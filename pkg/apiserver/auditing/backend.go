@@ -24,7 +24,7 @@ import (
 	"net/http"
 	"time"
 
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	"kubesphere.io/kubesphere/pkg/apiserver/auditing/v1alpha1"
 	options "kubesphere.io/kubesphere/pkg/simple/client/auditing"
@@ -36,7 +36,7 @@ const (
 	DefaultSendersNum    = 100
 	DefaultBatchSize     = 100
 	DefaultBatchInterval = time.Second * 3
-	WebhookURL           = "https://kube-auditing-webhook-svc.kubesphere-logging-system.svc:443/audit/webhook/event"
+	WebhookURL           = "https://kube-auditing-webhook-svc.kubesphere-logging-system.svc:6443/audit/webhook/event"
 )
 
 type Backend struct {
@@ -141,6 +141,7 @@ func (b *Backend) sendEvents(events *v1alpha1.EventList) {
 	defer cancel()
 
 	stopCh := make(chan struct{})
+	skipReturnSender := false
 
 	send := func() {
 		ctx, cancel := context.WithTimeout(context.Background(), b.getSenderTimeout)
@@ -149,6 +150,7 @@ func (b *Backend) sendEvents(events *v1alpha1.EventList) {
 		select {
 		case <-ctx.Done():
 			klog.Error("Get auditing event sender timeout")
+			skipReturnSender = true
 			return
 		case b.senderCh <- struct{}{}:
 		}
@@ -156,7 +158,7 @@ func (b *Backend) sendEvents(events *v1alpha1.EventList) {
 		start := time.Now()
 		defer func() {
 			stopCh <- struct{}{}
-			klog.V(8).Infof("send %d auditing logs used %d", len(events.Items), time.Now().Sub(start).Milliseconds())
+			klog.V(8).Infof("send %d auditing logs used %d", len(events.Items), time.Since(start).Milliseconds())
 		}()
 
 		bs, err := b.eventToBytes(events)
@@ -172,6 +174,7 @@ func (b *Backend) sendEvents(events *v1alpha1.EventList) {
 			klog.Errorf("send audit events error, %s", err)
 			return
 		}
+		defer response.Body.Close()
 
 		if response.StatusCode != http.StatusOK {
 			klog.Errorf("send audit events error[%d]", response.StatusCode)
@@ -182,7 +185,9 @@ func (b *Backend) sendEvents(events *v1alpha1.EventList) {
 	go send()
 
 	defer func() {
-		<-b.senderCh
+		if !skipReturnSender {
+			<-b.senderCh
+		}
 	}()
 
 	select {

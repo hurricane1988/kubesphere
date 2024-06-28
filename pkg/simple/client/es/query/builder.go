@@ -7,8 +7,9 @@ import (
 )
 
 // TODO: elastic/go-elasticsearch is working on Query DSL support.
-//  See https://github.com/elastic/go-elasticsearch/issues/42.
-//  We need refactor our query body builder when that is ready.
+//
+//	See https://github.com/elastic/go-elasticsearch/issues/42.
+//	We need refactor our query body builder when that is ready.
 type Builder struct {
 	From          int64               `json:"from,omitempty"`
 	Size          int64               `json:"size,omitempty"`
@@ -175,7 +176,7 @@ func (b *Bool) AppendFilter(item Item) *Bool {
 
 func (b *Bool) AppendMultiFilter(items []Item) *Bool {
 
-	if items == nil || len(items) == 0 {
+	if len(items) == 0 {
 		return b
 	}
 
@@ -200,7 +201,7 @@ func (b *Bool) AppendShould(item Item) *Bool {
 
 func (b *Bool) AppendMultiShould(items []Item) *Bool {
 
-	if items == nil || len(items) == 0 {
+	if len(items) == 0 {
 		return b
 	}
 
@@ -224,7 +225,7 @@ func (b *Bool) AppendMustNot(item Item) *Bool {
 
 func (b *Bool) AppendMultiMustNot(items []Item) *Bool {
 
-	if items == nil || len(items) == 0 {
+	if len(items) == 0 {
 		return b
 	}
 
@@ -267,7 +268,7 @@ func NewMultiMatchPhrase(key string, val []string) []Item {
 
 	var array []Item
 
-	if val == nil || len(val) == 0 {
+	if len(val) == 0 {
 		return nil
 	}
 
@@ -307,7 +308,7 @@ func NewMultiMatchPhrasePrefix(key string, val []string) []Item {
 
 	var array []Item
 
-	if val == nil || len(val) == 0 {
+	if len(val) == 0 {
 		return nil
 	}
 
@@ -429,7 +430,7 @@ func NewMultiWildcard(key string, val []string) []Item {
 
 	var array []Item
 
-	if val == nil || len(val) == 0 {
+	if len(val) == 0 {
 		return nil
 	}
 

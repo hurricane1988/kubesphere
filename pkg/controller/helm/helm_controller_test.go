@@ -17,14 +17,13 @@ limitations under the License.
 package helm
 
 import (
-	"io/ioutil"
+	"os"
 	"path/filepath"
 	"testing"
 
 	"k8s.io/client-go/rest"
-	"k8s.io/klog/klogr"
+	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	"kubesphere.io/kubesphere/pkg/simple/client/gateway"
@@ -32,7 +31,6 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
-	"sigs.k8s.io/controller-runtime/pkg/envtest/printer"
 )
 
 // These tests use Ginkgo (BDD-style Go testing framework). Refer to
@@ -40,21 +38,18 @@ import (
 
 var cfg *rest.Config
 var testEnv *envtest.Environment
-var k8sClient client.Client
 
 func TestApplicationController(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecsWithDefaultAndCustomReporters(t,
-		"Application Controller Test Suite",
-		[]Reporter{printer.NewlineReporter{}})
+	RunSpecs(t, "Application Controller Test Suite")
 }
 
 var _ = BeforeSuite(func(done Done) {
-	logf.SetLogger(klogr.New())
+	logf.SetLogger(klog.NewKlogr())
 
 	By("bootstrapping test environment")
 	testEnv = &envtest.Environment{
-		CRDDirectoryPaths:        []string{filepath.Join("..", "..", "..", "config", "crds")},
+		CRDDirectoryPaths:        []string{filepath.Join("..", "..", "..", "config", "ks-core", "crds")},
 		AttachControlPlaneOutput: false,
 	}
 	var err error
@@ -75,8 +70,8 @@ var _ = Context("Helm reconcier", func() {
 	Describe("Gateway", func() {
 		It("Should setup gateway helm reconcier", func() {
 			data := "- group: gateway.kubesphere.io\n  version: v1alpha1\n  kind: Gateway\n  chart: ../../../config/gateway\n"
-			f, _ := ioutil.TempFile("", "watch")
-			ioutil.WriteFile(f.Name(), []byte(data), 0)
+			f, _ := os.CreateTemp("", "watch")
+			os.WriteFile(f.Name(), []byte(data), 0)
 
 			mgr, err := ctrl.NewManager(cfg, ctrl.Options{MetricsBindAddress: "0"})
 			Expect(err).NotTo(HaveOccurred(), "failed to create a manager")

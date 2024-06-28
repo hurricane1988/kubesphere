@@ -20,15 +20,14 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/ioutil"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
-	"github.com/prometheus/common/log"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -107,7 +106,7 @@ func (t *TestCtx) Setup(yamlPath string, crdPath string, schemes ...AddToSchemeF
 	if err != nil {
 		return err
 	}
-	bytes, err := ioutil.ReadFile(yamlPath)
+	bytes, err := os.ReadFile(yamlPath)
 	if err != nil {
 		klog.Errorln("Failed to read yaml file")
 		return err
@@ -233,12 +232,12 @@ func (ctx *TestCtx) Cleanup(option *CleanupOptions) {
 			if ctx.t != nil {
 				ctx.t.Errorf("A cleanup function failed with error: (%v)\n", err)
 			} else {
-				log.Errorf("A cleanup function failed with error: (%v)", err)
+				ctx.t.Errorf("A cleanup function failed with error: (%v)", err)
 			}
 		}
 	}
 	if ctx.t == nil && failed {
-		log.Fatal("A cleanup function failed")
+		ctx.t.Fatal("A cleanup function failed")
 	}
 }
 

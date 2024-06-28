@@ -27,7 +27,7 @@ import (
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sinformers "k8s.io/client-go/informers"
 	k8sfake "k8s.io/client-go/kubernetes/fake"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	"kubesphere.io/api/network/v1alpha1"
 
@@ -47,10 +47,6 @@ func TestIPPoolSuit(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "IPPool Suite")
 }
-
-var (
-	alwaysReady = func() bool { return true }
-)
 
 var _ = Describe("test ippool", func() {
 	pool := &v1alpha1.IPPool{
@@ -138,11 +134,7 @@ var _ = Describe("test ippool", func() {
 
 		Eventually(func() bool {
 			result, _ := ksclient.NetworkV1alpha1().IPPools().Get(context.TODO(), pool.Name, v1.GetOptions{})
-			if result.Status.Allocations != 1 {
-				return false
-			}
-
-			return true
+			return result.Status.Allocations == 1
 		}, 3*time.Second).Should(Equal(true))
 	})
 
@@ -153,11 +145,7 @@ var _ = Describe("test ippool", func() {
 		ipamClient.ReleaseByHandle("testhandle")
 		Eventually(func() bool {
 			result, _ := ksclient.NetworkV1alpha1().IPPools().Get(context.TODO(), pool.Name, v1.GetOptions{})
-			if result.Status.Allocations != 0 {
-				return false
-			}
-
-			return true
+			return result.Status.Allocations == 0
 		}, 3*time.Second).Should(Equal(true))
 
 		err := ksclient.NetworkV1alpha1().IPPools().Delete(context.TODO(), pool.Name, v1.DeleteOptions{})
