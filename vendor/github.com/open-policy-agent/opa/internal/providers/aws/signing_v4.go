@@ -5,13 +5,19 @@
 package aws
 
 import (
+	"bytes"
 	"crypto/hmac"
 	"crypto/sha256"
+	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"net/url"
 	"sort"
 	"strings"
 	"time"
+
+	v4 "github.com/open-policy-agent/opa/internal/providers/aws/v4"
 
 	"github.com/open-policy-agent/opa/ast"
 )
@@ -74,14 +80,52 @@ func sortKeys(strMap map[string][]string) []string {
 	return keys
 }
 
-// SignV4 modifies a map[string][]string of headers to generate an AWS V4 signature + headers based on the config/credentials provided.
-func SignV4(headers map[string][]string, method string, theURL *url.URL, body []byte, service string, awsCreds Credentials, theTime time.Time) (string, map[string]string) {
+// SignRequest modifies an http.Request to include an AWS V4 signature based on the provided credentials.
+func SignRequest(req *http.Request, service string, creds Credentials, theTime time.Time, sigVersion string) error {
 	// General ref. https://docs.aws.amazon.com/general/latest/gr/sigv4_signing.html
 	// S3 ref. https://docs.aws.amazon.com/AmazonS3/latest/API/sigv4-auth-using-authorization-header.html
 	// APIGateway ref. https://docs.aws.amazon.com/apigateway/api-reference/signing-requests/
-	bodyHexHash := fmt.Sprintf("%x", sha256.Sum256(body))
+
+	var body []byte
+	if req.Body == nil {
+		body = []byte("")
+	} else {
+		var err error
+		body, err = io.ReadAll(req.Body)
+		if err != nil {
+			return errors.New("error getting request body: " + err.Error())
+		}
+		// Since ReadAll consumed the body ReadCloser, we must create a new ReadCloser for the request so that the
+		// subsequent read starts from the beginning
+		req.Body = io.NopCloser(bytes.NewReader(body))
+	}
 
 	now := theTime.UTC()
+
+	if sigVersion == "4a" {
+		signedHeaders := SignV4a(req.Header, req.Method, req.URL, body, service, creds, now)
+		req.Header = signedHeaders
+	} else {
+		authHeader, awsHeaders := SignV4(req.Header, req.Method, req.URL, body, service, creds, now, false)
+		req.Header.Set("Authorization", authHeader)
+		for k, v := range awsHeaders {
+			req.Header.Add(k, v)
+		}
+	}
+
+	return nil
+}
+
+// SignV4 modifies a map[string][]string of headers to generate an AWS V4 signature + headers based on the config/credentials provided.
+func SignV4(headers map[string][]string, method string, theURL *url.URL, body []byte, service string,
+	awsCreds Credentials, theTime time.Time, disablePayloadSigning bool) (string, map[string]string) {
+	// General ref. https://docs.aws.amazon.com/general/latest/gr/sigv4_signing.html
+	// S3 ref. https://docs.aws.amazon.com/AmazonS3/latest/API/sigv4-auth-using-authorization-header.html
+	// APIGateway ref. https://docs.aws.amazon.com/apigateway/api-reference/signing-requests/
+
+	now := theTime.UTC()
+
+	contentSha256 := getContentHash(disablePayloadSigning, body)
 
 	// V4 signing has specific ideas of how it wants to see dates/times encoded
 	dateNow := now.Format("20060102")
@@ -94,7 +138,7 @@ func SignV4(headers map[string][]string, method string, theURL *url.URL, body []
 
 	// s3 and glacier require the extra x-amz-content-sha256 header. other services do not.
 	if service == "s3" || service == "glacier" {
-		awsHeaders["x-amz-content-sha256"] = bodyHexHash
+		awsHeaders[amzContentSha256Key] = contentSha256
 	}
 
 	// the security token header is necessary for ephemeral credentials, e.g. from
@@ -118,7 +162,7 @@ func SignV4(headers map[string][]string, method string, theURL *url.URL, body []
 	}
 
 	// the "canonical request" is the normalized version of the AWS service access
-	// that we're attempting to perform; in this case, a GET from an S3 bucket
+	// that we're attempting to perform
 	canonicalReq := method + "\n"               // HTTP method
 	canonicalReq += theURL.EscapedPath() + "\n" // URI-escaped path
 	canonicalReq += theURL.RawQuery + "\n"      // RAW Query String
@@ -133,7 +177,7 @@ func SignV4(headers map[string][]string, method string, theURL *url.URL, body []
 	// include the list of the signed headers
 	headerList := strings.Join(orderedKeys, ";")
 	canonicalReq += headerList + "\n"
-	canonicalReq += bodyHexHash
+	canonicalReq += contentSha256
 
 	// the "string to sign" is a time-bounded, scoped request token which
 	// is linked to the "canonical request" by inclusion of its SHA-256 hash
@@ -161,4 +205,12 @@ func SignV4(headers map[string][]string, method string, theURL *url.URL, body []
 	authHeader += "Signature=" + fmt.Sprintf("%x", signature)
 
 	return authHeader, awsHeaders
+}
+
+// getContentHash returns UNSIGNED-PAYLOAD if payload signing is disabled else will compute sha256 from body
+func getContentHash(disablePayloadSigning bool, body []byte) string {
+	if disablePayloadSigning {
+		return v4.UnsignedPayload
+	}
+	return fmt.Sprintf("%x", sha256.Sum256(body))
 }

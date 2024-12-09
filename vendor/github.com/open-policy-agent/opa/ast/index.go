@@ -164,7 +164,7 @@ func (i *baseDocEqIndex) Lookup(resolver ValueResolver) (*IndexResult, error) {
 	return result, nil
 }
 
-func (i *baseDocEqIndex) AllRules(resolver ValueResolver) (*IndexResult, error) {
+func (i *baseDocEqIndex) AllRules(_ ValueResolver) (*IndexResult, error) {
 	tr := newTrieTraversalResult()
 
 	// Walk over the rule trie and accumulate _all_ rules
@@ -173,6 +173,7 @@ func (i *baseDocEqIndex) AllRules(resolver ValueResolver) (*IndexResult, error) 
 
 	result := NewIndexResult(i.kind)
 	result.Default = i.defaultRule
+	result.OnlyGroundRefs = i.onlyGroundRefs
 	result.Rules = make([]*Rule, 0, len(tr.ordering))
 
 	for _, pos := range tr.ordering {
@@ -482,8 +483,10 @@ func (node *trieNode) String() string {
 	if len(node.mappers) > 0 {
 		flags = append(flags, fmt.Sprintf("%d mapper(s)", len(node.mappers)))
 	}
-	if l := node.values.Len(); l > 0 {
-		flags = append(flags, fmt.Sprintf("%d value(s)", l))
+	if node.values != nil {
+		if l := node.values.Len(); l > 0 {
+			flags = append(flags, fmt.Sprintf("%d value(s)", l))
+		}
 	}
 	return strings.Join(flags, " ")
 }
@@ -491,7 +494,7 @@ func (node *trieNode) String() string {
 func (node *trieNode) append(prio [2]int, rule *Rule) {
 	node.rules = append(node.rules, &ruleNode{prio, rule})
 
-	if node.values != nil {
+	if node.values != nil && rule.Head.Value != nil {
 		node.values.Add(rule.Head.Value)
 		return
 	}
@@ -697,17 +700,17 @@ func (node *trieNode) traverseArray(resolver ValueResolver, tr *trieTraversalRes
 		return node.Traverse(resolver, tr)
 	}
 
-	head := arr.Elem(0).Value
-
-	if !IsScalar(head) {
-		return nil
-	}
-
 	if node.any != nil {
 		err := node.any.traverseArray(resolver, tr, arr.Slice(1, -1))
 		if err != nil {
 			return err
 		}
+	}
+
+	head := arr.Elem(0).Value
+
+	if !IsScalar(head) {
+		return nil
 	}
 
 	child, ok := node.scalars.Get(head)

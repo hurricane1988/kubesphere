@@ -556,10 +556,10 @@ func (v *SubSchema) validateArray(currentSubSchema *SubSchema, value []interface
 			if validationResult.Valid() {
 				validatedOne = true
 				break
-			} else {
-				if bestValidationResult == nil || validationResult.score > bestValidationResult.score {
-					bestValidationResult = validationResult
-				}
+			}
+
+			if bestValidationResult == nil || validationResult.score > bestValidationResult.score {
+				bestValidationResult = validationResult
 			}
 		}
 		if !validatedOne {
@@ -716,7 +716,7 @@ func (v *SubSchema) validateString(currentSubSchema *SubSchema, value interface{
 
 	// minLength & maxLength:
 	if currentSubSchema.minLength != nil {
-		if utf8.RuneCount([]byte(stringValue)) < *currentSubSchema.minLength {
+		if utf8.RuneCountInString(stringValue) < *currentSubSchema.minLength {
 			result.addInternalError(
 				new(StringLengthGTEError),
 				context,
@@ -726,7 +726,7 @@ func (v *SubSchema) validateString(currentSubSchema *SubSchema, value interface{
 		}
 	}
 	if currentSubSchema.maxLength != nil {
-		if utf8.RuneCount([]byte(stringValue)) > *currentSubSchema.maxLength {
+		if utf8.RuneCountInString(stringValue) > *currentSubSchema.maxLength {
 			result.addInternalError(
 				new(StringLengthLTEError),
 				context,

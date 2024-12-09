@@ -16,6 +16,9 @@ import (
 	"fmt"
 	"strings"
 	"unicode"
+
+	"github.com/open-policy-agent/opa/ast/internal/tokens"
+	astJSON "github.com/open-policy-agent/opa/ast/json"
 )
 
 // MustParseBody returns a parsed body.
@@ -100,6 +103,14 @@ func MustParseStatement(input string) Statement {
 	return parsed
 }
 
+func MustParseStatementWithOpts(input string, popts ParserOptions) Statement {
+	parsed, err := ParseStatementWithOpts(input, popts)
+	if err != nil {
+		panic(err)
+	}
+	return parsed
+}
+
 // MustParseRef returns a parsed reference.
 // If an error occurs during parsing, panic.
 func MustParseRef(input string) Ref {
@@ -114,6 +125,16 @@ func MustParseRef(input string) Ref {
 // If an error occurs during parsing, panic.
 func MustParseRule(input string) *Rule {
 	parsed, err := ParseRule(input)
+	if err != nil {
+		panic(err)
+	}
+	return parsed
+}
+
+// MustParseRuleWithOpts returns a parsed rule.
+// If an error occurs during parsing, panic.
+func MustParseRuleWithOpts(input string, opts ParserOptions) *Rule {
+	parsed, err := ParseRuleWithOpts(input, opts)
 	if err != nil {
 		panic(err)
 	}
@@ -244,7 +265,9 @@ func ParseCompleteDocRuleFromEqExpr(module *Module, lhs, rhs *Term) (*Rule, erro
 	var head *Head
 
 	if v, ok := lhs.Value.(Var); ok {
-		head = NewHead(v)
+		// Modify the code to add the location to the head ref
+		// and set the head ref's jsonOptions.
+		head = VarHead(v, lhs.Location, &lhs.jsonOptions)
 	} else if r, ok := lhs.Value.(Ref); ok { // groundness ?
 		if _, ok := r[0].Value.(Var); !ok {
 			return nil, fmt.Errorf("invalid rule head: %v", r)
@@ -258,14 +281,18 @@ func ParseCompleteDocRuleFromEqExpr(module *Module, lhs, rhs *Term) (*Rule, erro
 	}
 	head.Value = rhs
 	head.Location = lhs.Location
+	head.setJSONOptions(lhs.jsonOptions)
+
+	body := NewBody(NewExpr(BooleanTerm(true).SetLocation(rhs.Location)).SetLocation(rhs.Location))
+	setJSONOptions(body, &rhs.jsonOptions)
 
 	return &Rule{
-		Location: lhs.Location,
-		Head:     head,
-		Body: NewBody(
-			NewExpr(BooleanTerm(true).SetLocation(rhs.Location)).SetLocation(rhs.Location),
-		),
-		Module: module,
+		Location:      lhs.Location,
+		Head:          head,
+		Body:          body,
+		Module:        module,
+		jsonOptions:   lhs.jsonOptions,
+		generatedBody: true,
 	}, nil
 }
 
@@ -279,15 +306,20 @@ func ParseCompleteDocRuleWithDotsFromTerm(module *Module, term *Term) (*Rule, er
 		return nil, fmt.Errorf("invalid rule head: %v", ref)
 	}
 	head := RefHead(ref, BooleanTerm(true).SetLocation(term.Location))
+	head.generatedValue = true
 	head.Location = term.Location
+	head.jsonOptions = term.jsonOptions
+
+	body := NewBody(NewExpr(BooleanTerm(true).SetLocation(term.Location)).SetLocation(term.Location))
+	setJSONOptions(body, &term.jsonOptions)
 
 	return &Rule{
 		Location: term.Location,
 		Head:     head,
-		Body: NewBody(
-			NewExpr(BooleanTerm(true).SetLocation(term.Location)).SetLocation(term.Location),
-		),
-		Module: module,
+		Body:     body,
+		Module:   module,
+
+		jsonOptions: term.jsonOptions,
 	}, nil
 }
 
@@ -309,14 +341,17 @@ func ParsePartialObjectDocRuleFromEqExpr(module *Module, lhs, rhs *Term) (*Rule,
 		head.Key = ref[1]
 	}
 	head.Location = rhs.Location
+	head.jsonOptions = rhs.jsonOptions
+
+	body := NewBody(NewExpr(BooleanTerm(true).SetLocation(rhs.Location)).SetLocation(rhs.Location))
+	setJSONOptions(body, &rhs.jsonOptions)
 
 	rule := &Rule{
-		Location: rhs.Location,
-		Head:     head,
-		Body: NewBody(
-			NewExpr(BooleanTerm(true).SetLocation(rhs.Location)).SetLocation(rhs.Location),
-		),
-		Module: module,
+		Location:    rhs.Location,
+		Head:        head,
+		Body:        body,
+		Module:      module,
+		jsonOptions: rhs.jsonOptions,
 	}
 
 	return rule, nil
@@ -340,18 +375,23 @@ func ParsePartialSetDocRuleFromTerm(module *Module, term *Term) (*Rule, error) {
 		if !ok {
 			return nil, fmt.Errorf("%vs cannot be used for rule head", TypeName(term.Value))
 		}
-		head = NewHead(v)
+		// Modify the code to add the location to the head ref
+		// and set the head ref's jsonOptions.
+		head = VarHead(v, ref[0].Location, &ref[0].jsonOptions)
 		head.Key = ref[1]
 	}
 	head.Location = term.Location
+	head.jsonOptions = term.jsonOptions
+
+	body := NewBody(NewExpr(BooleanTerm(true).SetLocation(term.Location)).SetLocation(term.Location))
+	setJSONOptions(body, &term.jsonOptions)
 
 	rule := &Rule{
-		Location: term.Location,
-		Head:     head,
-		Body: NewBody(
-			NewExpr(BooleanTerm(true).SetLocation(term.Location)).SetLocation(term.Location),
-		),
-		Module: module,
+		Location:    term.Location,
+		Head:        head,
+		Body:        body,
+		Module:      module,
+		jsonOptions: term.jsonOptions,
 	}
 
 	return rule, nil
@@ -377,12 +417,17 @@ func ParseRuleFromCallEqExpr(module *Module, lhs, rhs *Term) (*Rule, error) {
 	head := RefHead(ref, rhs)
 	head.Location = lhs.Location
 	head.Args = Args(call[1:])
+	head.jsonOptions = lhs.jsonOptions
+
+	body := NewBody(NewExpr(BooleanTerm(true).SetLocation(rhs.Location)).SetLocation(rhs.Location))
+	setJSONOptions(body, &rhs.jsonOptions)
 
 	rule := &Rule{
-		Location: lhs.Location,
-		Head:     head,
-		Body:     NewBody(NewExpr(BooleanTerm(true).SetLocation(rhs.Location)).SetLocation(rhs.Location)),
-		Module:   module,
+		Location:    lhs.Location,
+		Head:        head,
+		Body:        body,
+		Module:      module,
+		jsonOptions: lhs.jsonOptions,
 	}
 
 	return rule, nil
@@ -404,12 +449,17 @@ func ParseRuleFromCallExpr(module *Module, terms []*Term) (*Rule, error) {
 	head := RefHead(ref, BooleanTerm(true).SetLocation(loc))
 	head.Location = loc
 	head.Args = terms[1:]
+	head.jsonOptions = terms[0].jsonOptions
+
+	body := NewBody(NewExpr(BooleanTerm(true).SetLocation(loc)).SetLocation(loc))
+	setJSONOptions(body, &terms[0].jsonOptions)
 
 	rule := &Rule{
-		Location: loc,
-		Head:     head,
-		Module:   module,
-		Body:     NewBody(NewExpr(BooleanTerm(true).SetLocation(loc)).SetLocation(loc)),
+		Location:    loc,
+		Head:        head,
+		Module:      module,
+		Body:        body,
+		jsonOptions: terms[0].jsonOptions,
 	}
 	return rule, nil
 }
@@ -446,7 +496,7 @@ func ParseModuleWithOpts(filename, input string, popts ParserOptions) (*Module, 
 	if err != nil {
 		return nil, err
 	}
-	return parseModule(filename, stmts, comments)
+	return parseModule(filename, stmts, comments, popts.RegoVersion)
 }
 
 // ParseBody returns exactly one body.
@@ -577,6 +627,17 @@ func ParseStatement(input string) (Statement, error) {
 	return stmts[0], nil
 }
 
+func ParseStatementWithOpts(input string, popts ParserOptions) (Statement, error) {
+	stmts, _, err := ParseStatementsWithOpts("", input, popts)
+	if err != nil {
+		return nil, err
+	}
+	if len(stmts) != 1 {
+		return nil, fmt.Errorf("expected exactly one statement")
+	}
+	return stmts[0], nil
+}
+
 // ParseStatements is deprecated. Use ParseStatementWithOpts instead.
 func ParseStatements(filename, input string) ([]Statement, []*Comment, error) {
 	return ParseStatementsWithOpts(filename, input, ParserOptions{})
@@ -594,6 +655,8 @@ func ParseStatementsWithOpts(filename, input string, popts ParserOptions) ([]Sta
 		WithAllFutureKeywords(popts.AllFutureKeywords).
 		WithCapabilities(popts.Capabilities).
 		WithSkipRules(popts.SkipRules).
+		WithJSONOptions(popts.JSONOptions).
+		WithRegoVersion(popts.RegoVersion).
 		withUnreleasedKeywords(popts.unreleasedKeywords)
 
 	stmts, comments, errs := parser.Parse()
@@ -605,7 +668,7 @@ func ParseStatementsWithOpts(filename, input string, popts ParserOptions) ([]Sta
 	return stmts, comments, nil
 }
 
-func parseModule(filename string, stmts []Statement, comments []*Comment) (*Module, error) {
+func parseModule(filename string, stmts []Statement, comments []*Comment, regoCompatibilityMode RegoVersion) (*Module, error) {
 
 	if len(stmts) == 0 {
 		return nil, NewError(ParseErr, &Location{File: filename}, "empty module")
@@ -626,11 +689,15 @@ func parseModule(filename string, stmts []Statement, comments []*Comment) (*Modu
 
 	// The comments slice only holds comments that were not their own statements.
 	mod.Comments = append(mod.Comments, comments...)
+	mod.regoVersion = regoCompatibilityMode
 
 	for i, stmt := range stmts[1:] {
 		switch stmt := stmt.(type) {
 		case *Import:
 			mod.Imports = append(mod.Imports, stmt)
+			if mod.regoVersion == RegoV0 && Compare(stmt.Path.Value, RegoV1CompatibleRef) == 0 {
+				mod.regoVersion = RegoV0CompatV1
+			}
 		case *Rule:
 			setRuleModule(stmt, mod)
 			mod.Rules = append(mod.Rules, stmt)
@@ -640,6 +707,7 @@ func parseModule(filename string, stmts []Statement, comments []*Comment) (*Modu
 				errs = append(errs, NewError(ParseErr, stmt[0].Location, err.Error()))
 				continue
 			}
+			rule.generatedBody = true
 			mod.Rules = append(mod.Rules, rule)
 
 			// NOTE(tsandall): the statement should now be interpreted as a
@@ -657,6 +725,14 @@ func parseModule(filename string, stmts []Statement, comments []*Comment) (*Modu
 		}
 	}
 
+	if mod.regoVersion == RegoV0CompatV1 || mod.regoVersion == RegoV1 {
+		for _, rule := range mod.Rules {
+			for r := rule; r != nil; r = r.Else {
+				errs = append(errs, CheckRegoV1(r)...)
+			}
+		}
+	}
+
 	if len(errs) > 0 {
 		return nil, errs
 	}
@@ -667,7 +743,18 @@ func parseModule(filename string, stmts []Statement, comments []*Comment) (*Modu
 		return nil, errs
 	}
 
+	attachRuleAnnotations(mod)
+
 	return mod, nil
+}
+
+func ruleDeclarationHasKeyword(rule *Rule, keyword tokens.Token) bool {
+	for _, kw := range rule.Head.keywords {
+		if kw == keyword {
+			return true
+		}
+	}
+	return false
 }
 
 func newScopeAttachmentErr(a *Annotations, want string) *Error {
@@ -683,6 +770,16 @@ func setRuleModule(rule *Rule, module *Module) {
 	if rule.Else != nil {
 		setRuleModule(rule.Else, module)
 	}
+}
+
+func setJSONOptions(x interface{}, jsonOptions *astJSON.Options) {
+	vis := NewGenericVisitor(func(x interface{}) bool {
+		if x, ok := x.(customJSON); ok {
+			x.setJSONOptions(*jsonOptions)
+		}
+		return false
+	})
+	vis.Walk(x)
 }
 
 // ParserErrorDetail holds additional details for parser errors.
